@@ -1,5 +1,5 @@
 {
-    "version": "8.1",
+    "version": "8.2",
     "asistan_adi": "ATLAS",
     "tetik_kelime": "atlas",
     "kullanici": {
@@ -12,14 +12,14 @@
         "dil": "tr-TR",
         "enerji_esigi": 300,
         "dinamik_esik": true,
-        "kalibrasyon_suresi": 1.5,
-        "dinleme_suresi": 7,
-        "sessizlik_suresi": 2
+        "kalibrasyon_suresi": 1.0,
+        "dinleme_suresi": 8,
+        "sessizlik_suresi": 1.5
     },
     "tts": {
         "motor": "edge-tts",
         "ses": "tr-TR-AhmetNeural",
-        "hiz": "+0%",
+        "hiz": "+5%",
         "on_bellek": true,
         "on_bellek_esik": 25
     },
@@ -31,9 +31,9 @@
         "gemini_yedek_model": "gemini-1.5-flash",
         "ollama_model": "llama3",
         "ollama_url": "http://localhost:11434",
-        "max_token": 150,
+        "max_token": 100,
         "sicaklik": 0.7,
-        "timeout": 10
+        "timeout": 8
     },
     "hafiza": {
         "calisma_bellegi_boyutu": 7,
