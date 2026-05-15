@@ -513,11 +513,17 @@ class AtlasArayuz(QMainWindow):
 
         lay.addSpacing(20)
 
-        # ── MODÜLLER bölümü ──
+        # ── MODÜLLER bölümü — dinamik durum gösterimi ──
         lay.addWidget(self._sidebar_header("MODÜLLER"))
-        lay.addWidget(self._sidebar_item("Beyin Durumu"))
-        lay.addWidget(self._sidebar_item("Hafıza"))
-        lay.addWidget(self._sidebar_item("Duygu Analizi"))
+
+        self.sidebar_beyin = self._sidebar_modul("Beyin", "Başlatılıyor...")
+        lay.addWidget(self.sidebar_beyin)
+
+        self.sidebar_hafiza = self._sidebar_modul("Hafıza", "0 kayıt")
+        lay.addWidget(self.sidebar_hafiza)
+
+        self.sidebar_duygu = self._sidebar_modul("Duygu", "Nötr")
+        lay.addWidget(self.sidebar_duygu)
 
         lay.addStretch()
 
@@ -595,6 +601,28 @@ class AtlasArayuz(QMainWindow):
                 }}
             """)
         return lbl
+
+    def _sidebar_modul(self, baslik, deger):
+        """Dinamik modül durumu gösteren sidebar öğesi."""
+        container = QWidget()
+        container.setFixedHeight(46)
+        container.setStyleSheet("background: transparent;")
+        vlay = QVBoxLayout(container)
+        vlay.setContentsMargins(22, 4, 10, 4)
+        vlay.setSpacing(1)
+
+        baslik_lbl = QLabel(baslik)
+        baslik_lbl.setFont(QFont("Segoe UI", 9))
+        baslik_lbl.setStyleSheet(f"color: {C['text']}; background: transparent;")
+        vlay.addWidget(baslik_lbl)
+
+        deger_lbl = QLabel(deger)
+        deger_lbl.setObjectName(f"modul_{baslik.lower()}_deger")
+        deger_lbl.setFont(QFont("Consolas", 8))
+        deger_lbl.setStyleSheet(f"color: {C['cyan_dim']}; background: transparent;")
+        vlay.addWidget(deger_lbl)
+
+        return container
 
     # ═══════════════════ ORTA — KÜRE + KARŞILAMA ═══════════════════
 
@@ -760,13 +788,19 @@ class AtlasArayuz(QMainWindow):
             "isim":   "İsim Öğrenme",
             "mesgul": "İşleniyor...",
         }
-        self.dikkat_val.setText(mod_str.get(mod, mod))
+        text = mod_str.get(mod, mod)
+        self.dikkat_val.setText(text)
         self.kure.set_mod(mod)
+        # Sidebar beyin modülü güncelle
+        self._sidebar_modul_guncelle(self.sidebar_beyin, text)
 
     def _bellek_guncelle(self, durum):
         toplam = durum.get("toplam_etkilesim", 0)
         calisma = durum.get("calisma_bellegi", 0)
-        self.hafiza_val.setText(f"{calisma}/7 aktif · {toplam} toplam")
+        text = f"{calisma}/7 aktif · {toplam} toplam"
+        self.hafiza_val.setText(text)
+        # Sidebar hafıza modülü güncelle
+        self._sidebar_modul_guncelle(self.sidebar_hafiza, text)
 
     def _duygu_guncelle(self, duygu):
         duygular = {
@@ -774,7 +808,10 @@ class AtlasArayuz(QMainWindow):
             "sinirli": "Sinirli", "merakli": "Meraklı",
             "aceleci": "Aceleci", "notr": "Nötr",
         }
-        self.duygu_val.setText(duygular.get(duygu, duygu.capitalize()))
+        text = duygular.get(duygu, duygu.capitalize())
+        self.duygu_val.setText(text)
+        # Sidebar duygu modülü güncelle
+        self._sidebar_modul_guncelle(self.sidebar_duygu, text)
 
     def _hata_goster(self, hata):
         self._mesaj_ekle("sistem", f"⚠️ {hata}")
@@ -791,6 +828,16 @@ class AtlasArayuz(QMainWindow):
             self.karsilama_label.setText(f"Hoş geldin, {isim}")
         else:
             self.karsilama_label.setText("Hoş geldin")
+
+    def _sidebar_modul_guncelle(self, container, deger_text):
+        """Sidebar modül widget'ının değer label'ını güncelle."""
+        try:
+            for child in container.findChildren(QLabel):
+                if child.objectName().startswith("modul_") and child.objectName().endswith("_deger"):
+                    child.setText(deger_text)
+                    break
+        except Exception:
+            pass
 
     def _saat_guncelle(self):
         simdi = datetime.now()
