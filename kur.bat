@@ -37,7 +37,7 @@ echo.
 
 venv\Scripts\python.exe -m pip install --upgrade pip >nul 2>&1
 
-echo   Eski Gemini paketi kaldirilıyor...
+echo   Eski Gemini paketi kaldiriliyor...
 venv\Scripts\python.exe -m pip uninstall google-generativeai -y >nul 2>&1
 
 echo   PyQt6 yukleniyor...
@@ -63,6 +63,10 @@ if errorlevel 1 echo   UYARI: pygame-ce yuklenemedi!
 echo   google-genai (YENI SDK) yukleniyor...
 venv\Scripts\python.exe -m pip install google-genai>=1.0.0 >nul 2>&1
 if errorlevel 1 echo   UYARI: google-genai yuklenemedi!
+
+echo   openai (DeepSeek icin) yukleniyor...
+venv\Scripts\python.exe -m pip install openai>=1.0.0 >nul 2>&1
+if errorlevel 1 echo   UYARI: openai yuklenemedi!
 
 echo   numpy yukleniyor...
 venv\Scripts\python.exe -m pip install numpy>=1.26.0 >nul 2>&1
@@ -125,8 +129,8 @@ echo  ║                                                   ║
 echo  ║  Baslatmak icin: Masaustundeki ATLAS ikonuna      ║
 echo  ║  veya baslat.bat dosyasina tiklayin.               ║
 echo  ║                                                   ║
-echo  ║  ONEMLI: config.json dosyasina                     ║
-echo  ║  Gemini API anahtarinizi yazmayi unutmayin!        ║
+echo  ║  ONEMLI: config.json dosyasina API key girin!      ║
+echo  ║  (Gemini veya DeepSeek - birisi yeterli)           ║
 echo  ╚══════════════════════════════════════════════════╝
 echo.
 pause
