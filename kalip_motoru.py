@@ -469,9 +469,13 @@ class KalipMotoru:
         """
         yazilacak = None
 
-        # "söylediklerimi yaz" / "söylediğimi yaz" → özel durum
+        # "söylediklerimi yaz" / "devamını yaz" (metin belirtilmemiş) → özel durum
         if any(k in metin for k in ["söylediklerimi yaz", "söylediğimi yaz", "dediklerimi yaz", "dediğimi yaz"]):
             return f"Ne yazmamı istiyorsun {ad}? Yazmamı istediğin metni söyle.", "metin_soru", 0.95
+
+        # "devamını yaz" / "yazının devamını yaz" — tek başına, yazılacak metin yok
+        if re.match(r"^(yazının\s+)?devam[ıi]n[ıi]\s+yaz$", metin.strip()):
+            return f"Ne yazmamı istiyorsun {ad}? Metni söyle, yazayım.", "metin_soru", 0.95
 
         # 1. "şunu yaz: merhaba dünya" / "bunu yaz merhaba"
         m = re.search(r"(?:şunu|bunu|su|bu)\s+yaz\s*:?\s*(.+)", metin)
