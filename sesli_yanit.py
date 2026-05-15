@@ -1,8 +1,9 @@
 """
-Sesli Yanit Modulu v6.0
+Sesli Yanit Modulu v7.5
 - ON-BELLEKLI TTS: Sik kullanilan yanitlar onceden olusturulur
-- pyttsx3 ANINDA yanit: Kisa yanitlar icin Windows yerel TTS (50ms!)
-- edge-tts KUTUPHANE: Uzun yanitlar icin (subprocess YOK!)
+- edge-tts KUTUPHANE: Yuksek kaliteli Turkce ses (retry destekli)
+- pyttsx3: Sadece Turkce ses varsa kullanilir
+- PowerShell: SADECE Turkce ses varsa konusur (Ingilizce fallback YOK)
 - pygame ile mp3 calma
 """
 import asyncio
@@ -45,6 +46,17 @@ ON_BELLEK_YANITLARI = {
     "sesi yukseltiyorum": "Sesi yukseltiyorum",
     "sesi kisiyorum": "Sesi kisiyorum",
     "ekran goruntusu": "Ekran goruntusu aliyorum",
+    # === ISIM SORMA (ilk kullanim) ===
+    "isim_sorusu": "Merhaba! Ben senin sesli asistaninim. Adini ogrenebilir miyim?",
+    "isim_tekrar": "Adini net duyamadim. Sadece adini soyler misin?",
+    "isim_tekrar2": "Bir kez daha soylersen cok iyi olur. Adin ne?",
+    "isim_son": "Sorun degil, bana istedigin zaman adini soyleyebilirsin!",
+    # === GENEL YANITLAR ===
+    "nasil yardimci": "Nasil yardimci olabilirim?",
+    "baska bir sey": "Baska bir sey var mi?",
+    "tabii ki": "Tabii ki!",
+    "elbette": "Elbette!",
+    "hemen yapiyorum": "Hemen yapiyorum!",
 }
 
 
@@ -58,6 +70,7 @@ class SesliYanit:
         self._loop = None
         self._on_bellek = {}  # anahtar -> dosya yolu
         self._on_bellek_klasor = None
+        self._on_bellek_hazir = threading.Event()
 
         self._pygame_init()
         self._edge_tts_init()
@@ -113,7 +126,6 @@ class SesliYanit:
                 print(f"[OK] pyttsx3 Turkce ses hazir (aninda yanit)")
             else:
                 # Turkce ses YOK - pyttsx3 devre disi birak
-                # Ingilizce sesle konusmak yerine edge-tts'e birak
                 print("[!] pyttsx3: Turkce ses bulunamadi, edge-tts kullanilacak")
                 print("    Turkce ses icin: Windows Ayarlar > Zaman ve Dil > Konusma > Turkce ekleyin")
                 self._pyttsx3_hazir = False
@@ -137,8 +149,21 @@ class SesliYanit:
             toplam = len(ON_BELLEK_YANITLARI)
             sayac = 0
 
-            for anahtar, metin in ON_BELLEK_YANITLARI.items():
+            # Oncelikli: isim sorusu ilk olusturulsun
+            oncelikli = ["isim_sorusu", "isim_tekrar", "isim_tekrar2", "isim_son", "merhaba"]
+            diger = [k for k in ON_BELLEK_YANITLARI if k not in oncelikli]
+            sira = oncelikli + diger
+
+            for anahtar in sira:
+                metin = ON_BELLEK_YANITLARI[anahtar]
                 dosya = os.path.join(self._on_bellek_klasor, f"{anahtar}.mp3")
+                # Eski cache dosyasini sil (eski surumden kalma olabilir)
+                if anahtar in ["merhaba"] and os.path.exists(dosya):
+                    # merhaba cache'ini her zaman yenile (eski bug'dan kalma olabilir)
+                    try:
+                        os.remove(dosya)
+                    except:
+                        pass
                 if os.path.exists(dosya) and os.path.getsize(dosya) > 1000:
                     self._on_bellek[anahtar] = dosya
                     sayac += 1
@@ -152,10 +177,16 @@ class SesliYanit:
                 except Exception as e:
                     print(f"[!] On-bellek hatasi ({anahtar}): {e}")
 
+                # isim_sorusu hazir oldugunda hemen sinyal ver
+                if anahtar == "isim_sorusu" and anahtar in self._on_bellek:
+                    self._on_bellek_hazir.set()
+
             loop.close()
+            self._on_bellek_hazir.set()  # Her durumda sinyal ver
             print(f"[OK] On-bellek hazir: {sayac}/{toplam} yanit")
         except Exception as e:
             print(f"[!] On-bellek olusturulamadi: {e}")
+            self._on_bellek_hazir.set()
 
     def konus(self, metin):
         if not metin or not metin.strip():
@@ -166,14 +197,18 @@ class SesliYanit:
 
         # STRATEJI 1: On-bellekte var mi?
         bellek_anahtar = self._on_bellek_bul(kisa_metin)
-        if bellek_anahtar and bellek_anahtar in self._on_bellek:
-            dosya = self._on_bellek[bellek_anahtar]
-            if os.path.exists(dosya):
-                print(f"[TTS] On-bellekten: '{bellek_anahtar}' ({time.time()-baslangic:.0f}ms)")
-                self._mp3_cal(dosya)
-                return
+        if bellek_anahtar:
+            # On-bellek henuz hazir degilse kisa bekle (max 5sn)
+            if bellek_anahtar not in self._on_bellek:
+                self._on_bellek_hazir.wait(timeout=5.0)
+            if bellek_anahtar in self._on_bellek:
+                dosya = self._on_bellek[bellek_anahtar]
+                if os.path.exists(dosya) and os.path.getsize(dosya) > 500:
+                    print(f"[TTS] On-bellekten: '{bellek_anahtar}' ({(time.time()-baslangic)*1000:.0f}ms)")
+                    self._mp3_cal(dosya)
+                    return
 
-        # STRATEJI 2: Kisa metin + pyttsx3 hazir -> aninda konuş
+        # STRATEJI 2: Kisa metin + pyttsx3 hazir -> aninda konus
         if self._pyttsx3_hazir and len(kisa_metin) < 60:
             try:
                 print(f"[TTS] pyttsx3 aninda: '{kisa_metin[:30]}...'")
@@ -183,42 +218,52 @@ class SesliYanit:
                 return
             except Exception as e:
                 print(f"[!] pyttsx3 hatasi: {e}")
-                # Devam et, edge-tts dene
 
-        # STRATEJI 3: edge-tts kutuphane (hizli, yuksek kalite)
+        # STRATEJI 3: edge-tts kutuphane (2 deneme, dosya boyutu kontrolu)
         if self._edge_tts_hazir:
-            try:
-                import edge_tts
-                dosya = os.path.join(tempfile.gettempdir(), "asistan_yanit.mp3")
-                communicate = edge_tts.Communicate(kisa_metin, self.ses)
-                self._loop.run_until_complete(communicate.save(dosya))
-                print(f"[TTS] edge-tts: {(time.time()-baslangic)*1000:.0f}ms")
-                self._mp3_cal(dosya)
+            for deneme in range(2):
                 try:
-                    os.remove(dosya)
-                except:
-                    pass
-                return
-            except Exception as e:
-                print(f"[!] edge-tts hatasi: {e}")
+                    import edge_tts
+                    dosya = os.path.join(tempfile.gettempdir(), "asistan_yanit.mp3")
+                    communicate = edge_tts.Communicate(kisa_metin, self.ses)
+                    self._loop.run_until_complete(communicate.save(dosya))
+                    # Dosya boyutu kontrolu - bozuk/eksik dosya olmasin
+                    if os.path.exists(dosya) and os.path.getsize(dosya) > 500:
+                        print(f"[TTS] edge-tts: {(time.time()-baslangic)*1000:.0f}ms (deneme {deneme+1})")
+                        self._mp3_cal(dosya)
+                        try:
+                            os.remove(dosya)
+                        except:
+                            pass
+                        return
+                    else:
+                        boyut = os.path.getsize(dosya) if os.path.exists(dosya) else 0
+                        print(f"[!] edge-tts dosya cok kucuk ({boyut}B), tekrar deneniyor...")
+                        time.sleep(1)
+                except Exception as e:
+                    print(f"[!] edge-tts hatasi (deneme {deneme+1}): {e}")
+                    if deneme == 0:
+                        time.sleep(1)
 
-        # STRATEJI 4: Fallback - PowerShell
+        # STRATEJI 4: Fallback - PowerShell (SADECE Turkce ses varsa)
         self._powershell_tts(kisa_metin)
 
     def _on_bellek_bul(self, metin):
-        """Metni on-bellek anahtariyla eslestir - SADECE kisa ve tam eslesme"""
+        """Metni on-bellek anahtariyla eslestir - akilli eslesme"""
         metin_kucuk = metin.lower().strip().rstrip("!.?,")
+
         # 1) Tam eslestirme: metin, onbellekteki yanitla AYNI mi?
         for anahtar, tam_metin in ON_BELLEK_YANITLARI.items():
             if metin_kucuk == tam_metin.lower().rstrip("!.?,"):
                 return anahtar
-        # 2) Kisa metin eslestirme: SADECE 20 karakterden kisa metinler icin
-        #    (Uzun metinler yanlis eslesmemeli - ornegin "merhaba" kelimesi
-        #     "Merhaba! Adini ogrenebilir miyim?" ile eslesmemeli)
-        if len(metin_kucuk) <= 20:
+
+        # 2) Kisa metin eslestirme: SADECE 25 karakterden kisa metinler icin
+        #    (Uzun metinler yanlis eslesmemeli)
+        if len(metin_kucuk) <= 25:
             for anahtar in ON_BELLEK_YANITLARI:
                 if anahtar in metin_kucuk:
                     return anahtar
+
         return None
 
     def _mp3_cal(self, dosya):
@@ -247,25 +292,32 @@ class SesliYanit:
             pass
 
     def _powershell_tts(self, metin):
-        """Son care: PowerShell ile seslendir (Turkce ses tercih edilir)"""
+        """Son care: PowerShell ile seslendir - SADECE Turkce ses varsa konusur"""
         try:
             import subprocess
             temiz = metin.replace("'", "").replace('"', '').replace('\n', ' ').replace('`', '')[:200]
-            # Once Turkce ses bulmaya calis, bulamazsa varsayilani kullan
+            # Turkce ses bul, YOKSA KONUSMA (Ingilizce/kadin sesi onlenir)
             ps_script = (
                 "Add-Type -AssemblyName System.Speech; "
                 "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
+                "$turkce = $false; "
                 "$voices = $s.GetInstalledVoices(); "
                 "foreach($v in $voices){ "
                 "  if($v.VoiceInfo.Culture.Name -like 'tr*'){ "
-                "    $s.SelectVoice($v.VoiceInfo.Name); break "
+                "    $s.SelectVoice($v.VoiceInfo.Name); $turkce = $true; break "
                 "  } "
                 "}; "
-                f"$s.Speak('{temiz}')"
+                "if($turkce){ "
+                f"  $s.Speak('{temiz}') "
+                "} else { "
+                "  Write-Host '[!] PowerShell: Turkce ses yok, sessiz kaliniyor' "
+                "}"
             )
-            subprocess.run(
+            result = subprocess.run(
                 ["powershell", "-Command", ps_script],
-                timeout=15, capture_output=True
+                timeout=15, capture_output=True, text=True
             )
+            if "Turkce ses yok" in (result.stdout or ""):
+                print("[!] PowerShell: Turkce ses bulunamadi - Ingilizce konusma engellendi")
         except Exception as e:
             print(f"[!] PowerShell TTS hatasi: {e}")
