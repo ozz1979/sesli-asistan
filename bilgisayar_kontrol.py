@@ -270,20 +270,44 @@ def ses_ayarla(islem):
 def tum_programlari_kapat():
     """
     Tüm açık kullanıcı pencerelerini kapatır.
-    Sistem süreçlerini (explorer, ATLAS kendisi) korur.
+    ATLAS'ı (kendi PID + python), explorer shell'i ve sistem süreçlerini KORUR.
     """
     try:
-        # PowerShell: Görünür pencereleri olan süreçleri bul, sistemi hariç tut
-        ps_script = """
-$korunanlar = @('explorer','Atlas','python','pythonw','cmd','powershell','conhost','dwm','csrss','smss','winlogon','services','lsass','svchost','RuntimeBroker','SearchHost','StartMenuExperienceHost','ShellExperienceHost','TextInputHost','SystemSettings','ctfmon','taskhostw')
-$pencereli = Get-Process | Where-Object { $_.MainWindowHandle -ne 0 -and $_.MainWindowTitle -ne '' -and $korunanlar -notcontains $_.Name }
+        atlas_pid = os.getpid()
+
+        # PowerShell: Sadece kullanıcı programlarını kapat
+        # 1. Kendi PID'imizi ve parent PID'imizi koru
+        # 2. explorer.exe'yi asla kapatma (Windows shell çöker)
+        # 3. Tüm python süreçlerini koru (ATLAS)
+        # 4. Sistem süreçlerini koru
+        ps_script = f"""
+$atlasPid = {atlas_pid}
+$sistemSurecler = @(
+    'explorer','python','python3','pythonw',
+    'cmd','powershell','pwsh','conhost','WindowsTerminal',
+    'dwm','csrss','smss','winlogon','wininit',
+    'services','lsass','lsaiso','svchost',
+    'RuntimeBroker','SearchHost','SearchUI',
+    'StartMenuExperienceHost','ShellExperienceHost',
+    'TextInputHost','SystemSettings','SettingsHelper',
+    'ctfmon','taskhostw','sihost','fontdrvhost',
+    'WmiPrvSE','dllhost','SecurityHealthSystray',
+    'OneDrive','PhoneExperienceHost','WidgetService',
+    'LockApp','LogiOverlay','CompPkgSrv'
+)
+$pencereli = Get-Process | Where-Object {{
+    $_.MainWindowHandle -ne 0 -and
+    $_.MainWindowTitle -ne '' -and
+    $_.Id -ne $atlasPid -and
+    $sistemSurecler -notcontains $_.Name
+}}
 $kapatilan = @()
-foreach ($p in $pencereli) {
-    try {
-        $p.CloseMainWindow() | Out-Null
+foreach ($p in $pencereli) {{
+    try {{
+        $null = $p.CloseMainWindow()
         $kapatilan += $p.Name
-    } catch {}
-}
+    }} catch {{}}
+}}
 $kapatilan -join ','
 """
         r = subprocess.run(
