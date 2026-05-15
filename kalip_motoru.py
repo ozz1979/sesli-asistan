@@ -38,6 +38,11 @@ PROGRAM_HARITASI = {
     # Ofis
     "not defteri": "notepad",
     "notepad": "notepad",
+    "metin belgesi": "notepad",
+    "metin dosyası": "notepad",
+    "metin dosyasi": "notepad",
+    "yazı editörü": "notepad",
+    "yazi editoru": "notepad",
     "word": "start winword",
     "excel": "start excel",
     "powerpoint": "start powerpnt",
