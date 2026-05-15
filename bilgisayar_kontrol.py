@@ -158,17 +158,36 @@ def web_ac(url):
 
 
 def ekran_goruntusu():
-    """Ekran görüntüsü alır, masaüstüne kaydeder"""
+    """Ekran görüntüsü alır, masaüstüne kaydeder. PowerShell kullanır (Pillow gerekmez)."""
     try:
-        import pyautogui
         from datetime import datetime
         masaustu = os.path.expanduser("~\\Desktop")
         dosya = os.path.join(masaustu, f"ekran_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
-        ekran = pyautogui.screenshot()
-        ekran.save(dosya)
-        logger.info(f"Ekran görüntüsü: {dosya}")
-        return True, f"Ekran görüntüsü masaüstüne kaydedildi"
+        dosya_ps = dosya.replace("\\", "\\\\")
+
+        ps_script = f"""
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+$screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+$bitmap = New-Object System.Drawing.Bitmap($screen.Width, $screen.Height)
+$graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+$graphics.CopyFromScreen($screen.Location, [System.Drawing.Point]::Empty, $screen.Size)
+$bitmap.Save("{dosya_ps}")
+$graphics.Dispose()
+$bitmap.Dispose()
+"""
+        result = subprocess.run(
+            ["powershell", "-Command", ps_script],
+            capture_output=True, timeout=10
+        )
+        if os.path.exists(dosya):
+            logger.info(f"Ekran görüntüsü: {dosya}")
+            return True, "Ekran görüntüsü masaüstüne kaydedildi"
+        else:
+            logger.error(f"Ekran görüntüsü alınamadı: {result.stderr.decode('utf-8', errors='ignore')}")
+            return False, "Ekran görüntüsü kaydedilemedi"
     except Exception as e:
+        logger.error(f"Ekran görüntüsü hatası: {e}")
         return False, str(e)
 
 
