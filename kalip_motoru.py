@@ -17,6 +17,7 @@ import subprocess
 import logging
 from datetime import datetime
 from turkce import turkce_normalize
+import bilgisayar_kontrol as bk
 
 logger = logging.getLogger("ATLAS.kalip")
 
@@ -271,6 +272,11 @@ AYLAR = {
 }
 
 
+def eylem_varmi(metin, fiiller):
+    """Metinde verilen fiillerden biri var mı kontrol et"""
+    return any(f in metin for f in fiiller)
+
+
 class KalipMotoru:
     """
     Bazal Ganglia — otomatik kalıp eşleştirme motoru.
@@ -337,7 +343,12 @@ class KalipMotoru:
         if self.hafiza:
             ad = self.hafiza.kullanici_bilgisi_getir("ad", "")
 
-        # ── Ses komutları ──
+        # ── 0. METİN YAZMA KOMUTLARI (en yüksek öncelik) ──
+        yanit = self._metin_yazma_kontrol(metin, metin_norm, ad)
+        if yanit:
+            return yanit
+
+        # ── 1. Ses komutları ──
         for anahtar, komut in SES_KOMUTLARI.items():
             if anahtar in metin or turkce_normalize(anahtar) in metin_norm:
                 try:
@@ -346,7 +357,65 @@ class KalipMotoru:
                 except Exception:
                     pass
 
-        # ── Program açma ──
+        # ── 2. Ekran görüntüsü ──
+        if any(k in metin for k in ["ekran görüntüsü", "ekran goruntusu", "screenshot", "ekran al"]):
+            basarili, mesaj = bk.ekran_goruntusu()
+            if basarili:
+                return f"{mesaj} {ad}.", "ekran_goruntusu", 0.95
+            else:
+                return f"Ekran görüntüsü alınamadı: {mesaj}", "hata", 0.9
+
+        # ── 3. Klasör açma komutları ──
+        if "masaüstü" in metin or "masaustu" in metin_norm:
+            if eylem_varmi(metin, AC_FIILLERI):
+                basarili, mesaj = bk.masaustu_ac()
+                return f"Masaüstü açılıyor {ad}!", "klasor_ac", 0.95 if basarili else 0.5
+
+        if "belgelerim" in metin or "dökümanlar" in metin or "dokumanlar" in metin_norm or "documents" in metin:
+            if eylem_varmi(metin, AC_FIILLERI):
+                basarili, mesaj = bk.belgelerim_ac()
+                return f"Belgelerim açılıyor {ad}!", "klasor_ac", 0.95 if basarili else 0.5
+
+        if "indirilenler" in metin or "downloads" in metin:
+            if eylem_varmi(metin, AC_FIILLERI):
+                basarili, mesaj = bk.indirilenler_ac()
+                return f"İndirilenler açılıyor {ad}!", "klasor_ac", 0.95 if basarili else 0.5
+
+        # ── 4. Web arama ──
+        m = re.search(r"(?:internette?|google.?da|web.?de|araştır)\s+(.+?)(?:\s+ara)?$", metin)
+        if not m:
+            m = re.search(r"(.+?)\s+(?:ara|arat|araştır)$", metin)
+        if m:
+            sorgu = m.group(1).strip()
+            if len(sorgu) > 2:
+                basarili, mesaj = bk.web_ara(sorgu)
+                if basarili:
+                    return f"'{sorgu}' için arama yapıyorum {ad}.", "web_arama", 0.95
+                else:
+                    return f"Arama yapamadım: {mesaj}", "hata", 0.9
+
+        # ── 5. URL açma ──
+        m = re.search(r"([\w.-]+\.(?:com|net|org|io|tr|edu)(?:\.\w+)?)\s*(?:aç|ac|git)?", metin)
+        if m:
+            url = m.group(1)
+            basarili, mesaj = bk.web_ac(url)
+            if basarili:
+                return f"{url} açılıyor {ad}!", "web_ac", 0.95
+
+        # ── 6. Pencere yönetimi ──
+        if "pencere" in metin or "ekran" in metin:
+            if "küçült" in metin or "kucult" in metin_norm or "minimize" in metin:
+                bk.pencere_kucult()
+                return f"Pencere küçültülüyor {ad}.", "pencere", 0.95
+            if "büyüt" in metin or "buyut" in metin_norm or "maximize" in metin:
+                bk.pencere_buyut()
+                return f"Pencere büyütülüyor {ad}.", "pencere", 0.95
+
+        if "masaüstünü göster" in metin or "masaustunu goster" in metin_norm:
+            bk.tum_pencereleri_kucult()
+            return f"Masaüstü gösteriliyor {ad}.", "pencere", 0.95
+
+        # ── 7. Program açma/kapatma ──
         eylem_ac = any(f in metin for f in AC_FIILLERI)
         eylem_kapat = any(f in metin for f in KAPAT_FIILLERI)
 
@@ -360,14 +429,73 @@ class KalipMotoru:
                     elif eylem_kapat:
                         return self._program_kapat(program_adi, ad)
 
-        # ── Bilgisayarı kapat / yeniden başlat ──
+        # ── 8. Bilgisayarı kapat / yeniden başlat ──
         if "bilgisayar" in metin or "bilgisayari" in metin_norm:
             if any(f in metin for f in KAPAT_FIILLERI):
                 return f"Bilgisayarı kapatma komutunu güvenlik nedeniyle sesli olarak çalıştırmıyorum {ad}. Bunu manuel yapmanı öneririm.", "guvenlik", 0.95
             if "yeniden" in metin and ("başlat" in metin or "baslat" in metin):
                 return f"Bilgisayarı yeniden başlatma komutunu güvenlik nedeniyle çalıştırmıyorum {ad}.", "guvenlik", 0.95
 
+        # ── 9. Kısayollar ──
+        if "kaydet" in metin and ("dosya" in metin or "belge" in metin):
+            bk.kisayol_bas("ctrl", "s")
+            return f"Kaydedildi {ad}!", "kisayol", 0.95
+
+        if "geri al" in metin:
+            bk.kisayol_bas("ctrl", "z")
+            return f"Geri alındı {ad}.", "kisayol", 0.95
+
+        if "kopyala" in metin and "yapıştır" not in metin:
+            bk.kisayol_bas("ctrl", "c")
+            return f"Kopyalandı {ad}.", "kisayol", 0.95
+
+        if "yapıştır" in metin:
+            bk.kisayol_bas("ctrl", "v")
+            return f"Yapıştırıldı {ad}.", "kisayol", 0.95
+
         return None, None, 0.0
+
+    def _metin_yazma_kontrol(self, metin, metin_norm, ad):
+        """
+        'X yaz', 'şunu yaz: X', 'yaz X' gibi komutları algıla ve gerçekten yaz.
+        """
+        yazilacak = None
+
+        # "şunu yaz: merhaba dünya" / "bunu yaz merhaba"
+        m = re.search(r"(?:şunu|bunu|su|bu)\s+yaz\s*:?\s*(.+)", metin)
+        if m:
+            yazilacak = m.group(1).strip()
+
+        # "merhaba dünya yaz" / "test mesajı yaz"
+        if not yazilacak:
+            m = re.search(r"^(.+?)\s+yaz(?:dır)?$", metin)
+            if m:
+                kalan = m.group(1).strip()
+                # "yaz" ile biten ama program açma/kapatma değilse
+                if not any(f in kalan for f in AC_FIILLERI | KAPAT_FIILLERI):
+                    if kalan not in PROGRAM_HARITASI and len(kalan) > 1:
+                        yazilacak = kalan
+
+        # "yaz: merhaba" / "yaz merhaba dünya"
+        if not yazilacak:
+            m = re.search(r"^yaz\s*:?\s+(.+)", metin)
+            if m:
+                yazilacak = m.group(1).strip()
+
+        # "söylediklerimi yaz" / "söylediğimi yaz" → bunlar özel durum, yazılacak metin yok
+        if yazilacak and any(k in yazilacak for k in ["söylediklerimi", "söylediğimi", "dediklerimi", "dediğimi"]):
+            return f"Ne yazmamı istiyorsun {ad}? Yazmamı istediğin metni söyle.", "metin_soru", 0.95
+
+        if yazilacak and len(yazilacak) > 0:
+            basarili, mesaj = bk.metin_yaz(yazilacak)
+            if basarili:
+                logger.info(f"Metin yazıldı: {yazilacak[:50]}")
+                return f"Yazdım {ad}.", "metin_yaz", 0.95
+            else:
+                logger.error(f"Metin yazma hatası: {mesaj}")
+                return f"Yazamadım: {mesaj}", "metin_hata", 0.9
+
+        return None
 
     def _program_ac(self, program_adi, ad):
         """Program aç."""
