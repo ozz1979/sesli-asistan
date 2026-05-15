@@ -146,6 +146,17 @@ class AtlasBeyin:
         if config_ad:
             self.hafiza.kullanici_bilgisi_kaydet("ad", config_ad)
 
+        # ── Ses seviyesini GUI küresine bağla ──
+        def ses_gui_gonder(seviye):
+            if self.arayuz:
+                try:
+                    self.arayuz.ses_seviyesi.emit(float(seviye))
+                except Exception:
+                    pass
+
+        self.ses.ses_seviye_callback = ses_gui_gonder
+        self.konusma.ses_seviye_callback = ses_gui_gonder
+
     def baslat(self):
         """ATLAS'ı başlat"""
         self._calisiyor = True
