@@ -8,4 +8,3 @@ sounddevice>=0.4.6
 scipy>=1.12.0
 requests>=2.31.0
 aiohttp>=3.9.0
-PyAudio>=0.2.14
