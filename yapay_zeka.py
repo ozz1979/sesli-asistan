@@ -1,10 +1,11 @@
 """
-Yapay Zeka Modulu v6.0
+Yapay Zeka Modulu v7.0
 - 3 KATMANLI AKILLI SISTEM:
   Katman 1: Aninda yerel eslestirme (0ms, AI yok, CPU yok)
   Katman 2: Google Gemini Flash (1-2sn, bulut)
   Katman 3: Ollama yedek (internet yoksa)
-- 50+ yerel komut kalıbı
+- Derin Gemini hata analizi + otomatik model fallback
+- 184+ yerel komut kalibi
 - Kisa optimize prompt = hizli yanit
 - Guvenilir JSON parse
 """
@@ -18,7 +19,6 @@ from kaliplar import yerel_kalip_esle
 # =============================================
 # KATMAN 1: YEREL KOMUT HARITASI (ANINDA YANIT)
 # =============================================
-# Uygulama isimleri -> bilgisayar_kontrol'daki isimler
 UYGULAMA_HARITASI = {
     "not defteri": "notepad", "notepad": "notepad", "metin editoru": "notepad",
     "chrome": "chrome", "tarayici": "chrome", "google chrome": "chrome",
@@ -42,7 +42,6 @@ UYGULAMA_HARITASI = {
     "vlc": "vlc", "video oynatici": "vlc",
 }
 
-# Populer URL kaliplari
 URL_HARITASI = {
     "youtube": "https://www.youtube.com",
     "gmail": "https://mail.google.com",
@@ -58,18 +57,18 @@ URL_HARITASI = {
     "hava durumu": "https://www.google.com/search?q=hava+durumu",
 }
 
-
-# Gemini icin KISA sistem promptu (daha kisa = daha hizli)
+# Gemini KISA sistem promptu (kisa = hizli yanit)
 SISTEM_PROMPTU = """Turkce sesli asistansin. JSON yanit ver.
 {"yanit":"kisa cevap","aksiyonlar":[{"fonksiyon":"ad","parametreler":{}}],"ogren":{"k":"v"}}
 Fonksiyonlar: uygulama_ac(isim), web_ara(sorgu), url_ac(url), dosya_bul(isim), ekran_goruntusu(), metin_yaz(metin), tus_bas(tuslar[]), bilgisayar_bilgi(), islem_kapat(isim), ses_ayarla(seviye 0-100)
 "ogren": kullanici tercihlerini kaydet. Aksiyon yoksa aksiyonlar:[] yaz."""
 
+# Gemini modelleri - fallback zinciri
+GEMINI_MODELLERI = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash"]
+
 
 def turkce_normalize(metin):
-    """Turkce karakterleri ASCII'ye cevir (eslestirme icin)
-    ç->c, ğ->g, ı->i, ö->o, ş->s, ü->u, İ->i
-    """
+    """Turkce karakterleri ASCII'ye cevir (eslestirme icin)"""
     cevrim = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")
     return metin.translate(cevrim)
 
@@ -83,6 +82,13 @@ class YapayZeka:
         self.url = config.get("ollama_url", "http://localhost:11434")
         self.maks_gecmis = config.get("maks_sohbet_gecmisi", 10)
         self.sohbet_gecmisi = []
+        self.kullanici_adi = ""
+        self._gemini_calisiyor = False
+        self._son_gemini_hata = ""
+
+    # =============================================
+    # BASLANGIC KONTROLLERI
+    # =============================================
 
     def baglanti_kontrol(self):
         if self.ai_motor == "gemini":
@@ -96,16 +102,91 @@ class YapayZeka:
             print("    Ucretsiz anahtar: https://aistudio.google.com/apikey")
             return False, []
         try:
+            # Maskeli API key goster
+            gizli = self.gemini_api_key[:8] + "..." + self.gemini_api_key[-4:]
+            print(f"    API Key: {gizli}")
+
             url = f"https://generativelanguage.googleapis.com/v1beta/models?key={self.gemini_api_key}"
             r = requests.get(url, timeout=10)
             if r.status_code == 200:
                 return True, [self.gemini_model]
             else:
+                hata = ""
+                try:
+                    hata = r.json().get("error", {}).get("message", "")
+                except:
+                    pass
                 print(f"[HATA] Gemini API hatasi: {r.status_code}")
+                if hata:
+                    print(f"    Detay: {hata[:120]}")
                 return False, []
         except Exception as e:
             print(f"[HATA] Gemini baglanti hatasi: {e}")
             return False, []
+
+    def gemini_test(self):
+        """Gemini API'yi GERCEK bir istek ile test et"""
+        if not self.gemini_api_key or self.gemini_api_key == "BURAYA_API_ANAHTARINIZI_YAZIN":
+            self._son_gemini_hata = "API anahtari ayarlanmamis"
+            return False, "API anahtari ayarlanmamis. config.json'a ekleyin."
+
+        try:
+            gizli = self.gemini_api_key[:8] + "..." + self.gemini_api_key[-4:]
+            print(f"    API Key: {gizli}")
+            print(f"    Model: {self.gemini_model}")
+
+            url = (
+                f"https://generativelanguage.googleapis.com/v1beta/models/"
+                f"{self.gemini_model}:generateContent?key={self.gemini_api_key}"
+            )
+            veri = {
+                "contents": [{"parts": [{"text": "Merhaba de, tek kelime"}]}],
+                "generationConfig": {"maxOutputTokens": 10}
+            }
+            r = requests.post(url, json=veri, timeout=10)
+
+            if r.status_code == 200:
+                self._gemini_calisiyor = True
+                self._son_gemini_hata = ""
+                return True, "Gemini calisiyor!"
+            elif r.status_code == 400:
+                hata = self._hata_mesaji_al(r)
+                if "API key" in hata:
+                    self._son_gemini_hata = "API anahtari gecersiz"
+                    return False, f"API anahtari gecersiz! Dogru anahtari config.json'a yazin."
+                self._son_gemini_hata = f"Gecersiz istek: {hata[:80]}"
+                return False, f"Gemini hata 400: {hata[:80]}"
+            elif r.status_code == 403:
+                self._son_gemini_hata = "API anahtari yetkisiz"
+                return False, "API anahtari yetkisiz (403). Yeni anahtar alin."
+            elif r.status_code == 429:
+                self._gemini_calisiyor = True
+                self._son_gemini_hata = ""
+                return True, "Gemini calisiyor (rate limit aktif, bazen yavas olabilir)"
+            else:
+                hata = self._hata_mesaji_al(r)
+                self._son_gemini_hata = f"Hata {r.status_code}"
+                return False, f"Gemini hata {r.status_code}: {hata[:80]}"
+
+        except requests.exceptions.SSLError as e:
+            self._son_gemini_hata = "SSL hatasi"
+            return False, "SSL sertifika hatasi. Internet baglantinizi kontrol edin."
+        except requests.exceptions.ConnectionError:
+            self._son_gemini_hata = "Internet yok"
+            return False, "Internet baglantisi yok!"
+        except requests.exceptions.Timeout:
+            self._son_gemini_hata = "Zaman asimi"
+            return False, "Gemini zaman asimi - internet yavas olabilir."
+        except Exception as e:
+            self._son_gemini_hata = str(e)[:60]
+            return False, f"Gemini baglanti hatasi: {str(e)[:80]}"
+
+    def _hata_mesaji_al(self, r):
+        """Response'dan hata mesajini cikar"""
+        try:
+            return r.json().get("error", {}).get("message", "Bilinmeyen hata")
+        except:
+            return f"HTTP {r.status_code}"
 
     def _ollama_kontrol(self):
         try:
@@ -175,21 +256,23 @@ class YapayZeka:
 
         # KATMAN 2: Gemini AI (HIZLI - 1-2sn)
         if self.ai_motor == "gemini" and self.gemini_api_key:
-            sonuc = self._gemini_isle(metin_temiz, hafiza_ozeti)
-            if sonuc:
-                return sonuc
+            if self.gemini_api_key != "BURAYA_API_ANAHTARINIZI_YAZIN":
+                sonuc = self._gemini_isle(metin_temiz, hafiza_ozeti)
+                if sonuc:
+                    return sonuc
+            else:
+                print("[!] Gemini API anahtari varsayilan deger, atlanıyor")
 
         # KATMAN 3: Ollama yedek (internet yoksa)
         return self._ollama_isle(metin_temiz, hafiza_ozeti)
 
     # =============================================
-    # KATMAN 1: YEREL ESLESTIRME (50+ KALIP)
+    # KATMAN 1: YEREL ESLESTIRME (184+ KALIP)
     # =============================================
     def _yerel_esle(self, mk, mo):
-        """Yerel komut eslestirme - AI cagirmadan aninda yanit
-        mk = turkce_normalize edilmis kucuk harf metin, mo = metin orijinal"""
+        """Yerel komut eslestirme - AI cagirmadan aninda yanit"""
 
-        # ONCE: Turkce gundelik konusma kaliplarini kontrol et (150+ kalip)
+        # ONCE: Turkce gundelik konusma kaliplarini kontrol et (184+ kalip)
         kalip_sonuc = yerel_kalip_esle(mk, mo)
         if kalip_sonuc:
             return kalip_sonuc
@@ -197,14 +280,12 @@ class YapayZeka:
         # --- UYGULAMA ACMA ---
         acma_kelimeleri = ["ac", "calistir", "baslat", "getir", "goster"]
         if any(k in mk for k in acma_kelimeleri):
-            # Once URL haritasinda ara
             for anahtar, url in URL_HARITASI.items():
                 if anahtar in mk:
                     return {
                         "yanit": f"{anahtar.title()} aciyorum",
                         "aksiyonlar": [{"fonksiyon": "url_ac", "parametreler": {"url": url}}]
                     }
-            # Sonra uygulama haritasinda ara
             for anahtar, uygulama in UYGULAMA_HARITASI.items():
                 if anahtar in mk:
                     return {
@@ -232,15 +313,9 @@ class YapayZeka:
                     }
 
         # --- WEB ARAMA ---
-        arama_kaliplari = [
-            ("internette ara", "internette ara"),
-            ("googleda ara", "googleda ara"),
-            ("webde ara", "webde ara"),
-            ("aratir misin", "aratir misin"),
-            ("arar misin", "arar misin"),
-            ("bak bakalim", "bak bakalim"),
-        ]
-        for kalip, _ in arama_kaliplari:
+        arama_kaliplari = ["internette ara", "googleda ara", "webde ara",
+                           "aratir misin", "arar misin", "bak bakalim"]
+        for kalip in arama_kaliplari:
             if kalip in mk:
                 sorgu = mk
                 for sil in ["internette", "webde", "googleda", "ara", "aratir misin",
@@ -249,16 +324,15 @@ class YapayZeka:
                 sorgu = sorgu.strip()
                 if sorgu and len(sorgu) > 1:
                     return {
-                        "yanit": f"Ariyorum",
+                        "yanit": "Ariyorum",
                         "aksiyonlar": [{"fonksiyon": "web_ara", "parametreler": {"sorgu": sorgu}}]
                     }
 
-        # Genel "... ara" kalıbı
         if mk.endswith(" ara") or " ara " in mk or "arat" in mk:
             sorgu = mk.replace("ara", "").replace("arat", "").replace("internette", "").strip()
             if sorgu and len(sorgu) > 2:
                 return {
-                    "yanit": f"Ariyorum",
+                    "yanit": "Ariyorum",
                     "aksiyonlar": [{"fonksiyon": "web_ara", "parametreler": {"sorgu": sorgu}}]
                 }
 
@@ -306,9 +380,6 @@ class YapayZeka:
         if any(k in mk for k in ["kilitle", "ekrani kilitle", "lock"]):
             return {"yanit": "Ekrani kilitliyorum", "aksiyonlar": [{"fonksiyon": "tus_bas", "parametreler": {"tuslar": ["win", "l"]}}]}
 
-        # TESEKKUR artik kaliplar.py'de
-
-        # Eslesmedi - AI'ya gonder
         return None
 
     # =============================================
@@ -316,7 +387,10 @@ class YapayZeka:
     # =============================================
     def _gemini_isle(self, metin, hafiza_ozeti=""):
         try:
+            # Prompt olustur
             prompt_parcalari = [SISTEM_PROMPTU]
+            if self.kullanici_adi:
+                prompt_parcalari.append(f"Kullanicinin adi: {self.kullanici_adi}")
             if hafiza_ozeti:
                 prompt_parcalari.append(f"Hafiza:{hafiza_ozeti[:300]}")
             if self.sohbet_gecmisi:
@@ -327,6 +401,7 @@ class YapayZeka:
             tam_prompt = "\n".join(prompt_parcalari)
             baslangic = time.time()
 
+            # Gemini API istegi
             url = (
                 f"https://generativelanguage.googleapis.com/v1beta/models/"
                 f"{self.gemini_model}:generateContent?key={self.gemini_api_key}"
@@ -335,38 +410,57 @@ class YapayZeka:
                 "contents": [{"parts": [{"text": tam_prompt}]}],
                 "generationConfig": {
                     "temperature": 0.3,
-                    "maxOutputTokens": 150,
+                    "maxOutputTokens": 120,
                     "responseMimeType": "application/json"
                 }
             }
 
-            r = requests.post(url, json=veri, timeout=12)
+            r = requests.post(url, json=veri, timeout=10)
             sure = time.time() - baslangic
-            print(f"[AI] Gemini: {sure:.1f}sn")
 
+            # -- HATA YONETIMI --
             if r.status_code == 429:
-                # Rate limit - 3sn bekle ve bir kez daha dene
-                print("[!] Gemini 429 (rate limit), 3sn bekleyip tekrar deneniyor...")
+                print(f"[!] Gemini 429 (rate limit) - {sure:.1f}sn, 3sn beklenip tekrar deneniyor...")
                 time.sleep(3)
-                r = requests.post(url, json=veri, timeout=12)
+                r = requests.post(url, json=veri, timeout=10)
                 sure = time.time() - baslangic
                 print(f"[AI] Gemini tekrar: {sure:.1f}sn -> {r.status_code}")
                 if r.status_code == 429:
-                    try:
-                        hata = r.json().get("error", {}).get("message", "")
-                        print(f"[HATA] Gemini 429 detay: {hata[:120]}")
-                    except:
-                        pass
+                    # Yedek model dene
+                    yedek = self._gemini_yedek_model_dene(tam_prompt, veri)
+                    if yedek:
+                        return yedek
+                    hata = self._hata_mesaji_al(r)
+                    print(f"[HATA] Gemini 429 devam ediyor: {hata[:100]}")
+                    self._son_gemini_hata = "Rate limit (cok sik istek)"
                     return None
 
-            if r.status_code != 200:
-                print(f"[HATA] Gemini {r.status_code}")
-                try:
-                    hata = r.json().get("error", {}).get("message", "")
-                    print(f"[HATA] Detay: {hata[:120]}")
-                except:
-                    pass
+            if r.status_code == 400:
+                hata = self._hata_mesaji_al(r)
+                print(f"[HATA] Gemini 400: {hata[:120]}")
+                if "API key" in hata:
+                    print("[!] >>> API ANAHTARINIZ GECERSIZ! config.json'daki gemini_api_key'i kontrol edin <<<")
+                    self._son_gemini_hata = "API anahtari gecersiz"
+                else:
+                    self._son_gemini_hata = f"Gecersiz istek: {hata[:60]}"
                 return None
+
+            if r.status_code == 403:
+                hata = self._hata_mesaji_al(r)
+                print(f"[HATA] Gemini 403 (yetkisiz): {hata[:120]}")
+                self._son_gemini_hata = "API anahtari yetkisiz"
+                return None
+
+            if r.status_code != 200:
+                hata = self._hata_mesaji_al(r)
+                print(f"[HATA] Gemini {r.status_code}: {hata[:120]}")
+                self._son_gemini_hata = f"Hata {r.status_code}"
+                return None
+
+            # Basarili yanit
+            print(f"[AI] Gemini: {sure:.1f}sn")
+            self._gemini_calisiyor = True
+            self._son_gemini_hata = ""
 
             yanit_metni = (
                 r.json().get("candidates", [{}])[0]
@@ -375,6 +469,7 @@ class YapayZeka:
                 .get("text", "")
             )
             if not yanit_metni:
+                print("[!] Gemini bos yanit dondurdu")
                 return None
 
             yanit = self._json_parse(yanit_metni)
@@ -386,12 +481,52 @@ class YapayZeka:
                 return yanit
             return self._fallback_yanit(metin, yanit_metni)
 
+        except requests.exceptions.SSLError:
+            print("[HATA] Gemini SSL hatasi - internet/sertifika sorunu")
+            self._son_gemini_hata = "SSL hatasi"
+            return None
+        except requests.exceptions.ConnectionError:
+            print("[HATA] Gemini baglanti hatasi - internet yok")
+            self._son_gemini_hata = "Internet yok"
+            return None
         except requests.exceptions.Timeout:
-            print("[HATA] Gemini zaman asimi")
+            print("[HATA] Gemini zaman asimi (10sn)")
+            self._son_gemini_hata = "Zaman asimi"
             return None
         except Exception as e:
             print(f"[HATA] Gemini: {e}")
+            self._son_gemini_hata = str(e)[:60]
             return None
+
+    def _gemini_yedek_model_dene(self, prompt, veri_sablonu):
+        """Ana model basarisiz olursa yedek Gemini modelini dene"""
+        for yedek_model in GEMINI_MODELLERI:
+            if yedek_model == self.gemini_model:
+                continue
+            try:
+                print(f"[!] Yedek model deneniyor: {yedek_model}")
+                url = (
+                    f"https://generativelanguage.googleapis.com/v1beta/models/"
+                    f"{yedek_model}:generateContent?key={self.gemini_api_key}"
+                )
+                r = requests.post(url, json=veri_sablonu, timeout=10)
+                if r.status_code == 200:
+                    print(f"[OK] Yedek model {yedek_model} calisti!")
+                    yanit_metni = (
+                        r.json().get("candidates", [{}])[0]
+                        .get("content", {})
+                        .get("parts", [{}])[0]
+                        .get("text", "")
+                    )
+                    if yanit_metni:
+                        yanit = self._json_parse(yanit_metni)
+                        if yanit:
+                            return yanit
+                else:
+                    print(f"[!] Yedek model {yedek_model}: {r.status_code}")
+            except:
+                continue
+        return None
 
     # =============================================
     # KATMAN 3: OLLAMA YEDEK
@@ -402,12 +537,14 @@ class YapayZeka:
             r = requests.get(f"{self.url}/api/tags", timeout=2)
             if r.status_code != 200:
                 print("[!] Ollama calismiyor, yerel yanit veriliyor")
-                return self._fallback_yanit(metin)
+                return self._akilli_hata_yaniti(metin)
         except:
             print("[!] Ollama baglantisi yok, yerel yanit veriliyor")
-            return self._fallback_yanit(metin)
+            return self._akilli_hata_yaniti(metin)
 
         mesajlar = [{"role": "system", "content": SISTEM_PROMPTU}]
+        if self.kullanici_adi:
+            mesajlar.append({"role": "system", "content": f"Kullanicinin adi: {self.kullanici_adi}"})
         if hafiza_ozeti:
             mesajlar.append({"role": "system", "content": f"Hafiza:{hafiza_ozeti[:300]}"})
         for g in self.sohbet_gecmisi[-4:]:
@@ -425,11 +562,11 @@ class YapayZeka:
             print(f"[AI] Ollama: {time.time()-baslangic:.1f}sn")
 
             if r.status_code != 200:
-                return self._fallback_yanit(metin)
+                return self._akilli_hata_yaniti(metin)
 
             yanit_metni = r.json().get("message", {}).get("content", "")
             if not yanit_metni:
-                return self._fallback_yanit(metin)
+                return self._akilli_hata_yaniti(metin)
 
             yanit = self._json_parse(yanit_metni)
             if yanit:
@@ -438,8 +575,63 @@ class YapayZeka:
                 return yanit
             return self._fallback_yanit(metin, yanit_metni)
 
-        except:
-            return {"yanit": "Baglanti sorunu var, tekrar dener misin?", "aksiyonlar": []}
+        except Exception as e:
+            print(f"[HATA] Ollama istegi basarisiz: {e}")
+            return self._akilli_hata_yaniti(metin)
+
+    # =============================================
+    # AKILLI HATA YANITI
+    # =============================================
+    def _akilli_hata_yaniti(self, metin):
+        """Gemini ve Ollama calismiyorsa akilli hata mesaji ver"""
+        # Once yerel eslestirme dene (belki gozden kacmistir)
+        yerel = self._yerel_esle(turkce_normalize(metin.lower()), metin)
+        if yerel:
+            return yerel
+
+        # Gemini hata nedenine gore mesaj ver
+        if self._son_gemini_hata:
+            if "API anahtari gecersiz" in self._son_gemini_hata:
+                return {
+                    "yanit": "API anahtarim gecersiz gorunuyor. config.json dosyasindaki gemini_api_key degerini kontrol eder misin?",
+                    "aksiyonlar": []
+                }
+            elif "API anahtari ayarlanmamis" in self._son_gemini_hata:
+                return {
+                    "yanit": "Henuz API anahtari ayarlanmamis. config.json dosyasina Gemini API anahtarini yaz.",
+                    "aksiyonlar": []
+                }
+            elif "Internet yok" in self._son_gemini_hata or "SSL" in self._son_gemini_hata:
+                return {
+                    "yanit": "Internet baglantisi yok gorunuyor. Baglantini kontrol eder misin?",
+                    "aksiyonlar": []
+                }
+            elif "Rate limit" in self._son_gemini_hata:
+                return {
+                    "yanit": "Simdilik cok fazla istek yaptik, biraz bekleyip tekrar dene.",
+                    "aksiyonlar": []
+                }
+            else:
+                return {
+                    "yanit": f"Simdilik bu soruyu yanitlayamiyorum. Sorun: {self._son_gemini_hata}",
+                    "aksiyonlar": []
+                }
+
+        # Genel hata (ne Gemini ne Ollama calismiyorsa)
+        if self.ai_motor == "gemini":
+            if not self.gemini_api_key or self.gemini_api_key == "BURAYA_API_ANAHTARINIZI_YAZIN":
+                return {
+                    "yanit": "API anahtari ayarlanmamis. config.json dosyasina Gemini API anahtarini yaz.",
+                    "aksiyonlar": []
+                }
+            return {
+                "yanit": "Gemini'ye ulasilamadi. Internet baglantini kontrol et.",
+                "aksiyonlar": []
+            }
+        return {
+            "yanit": "Simdilik bu soruyu yanitlayamiyorum. Yerel komutlarimi kullanabilirsin.",
+            "aksiyonlar": []
+        }
 
     # =============================================
     # YARDIMCILAR
@@ -476,7 +668,7 @@ class YapayZeka:
             temiz = re.sub(r'[{}\[\]"]', '', temiz).strip()
             if temiz and len(temiz) < 200:
                 return {"yanit": temiz, "aksiyonlar": []}
-        yerel = self._yerel_esle(metin.lower(), metin)
+        yerel = self._yerel_esle(turkce_normalize(metin.lower()), metin)
         if yerel:
             return yerel
         return {"yanit": "Anlayamadim, baska turlu soyler misin?", "aksiyonlar": []}
