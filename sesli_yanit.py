@@ -112,9 +112,15 @@ class SesliYanit:
                 self._pyttsx3_hazir = True
                 print(f"[OK] pyttsx3 Turkce ses hazir (aninda yanit)")
             else:
+                # Turkce ses YOK - pyttsx3 devre disi birak
+                # Ingilizce sesle konusmak yerine edge-tts'e birak
                 print("[!] pyttsx3: Turkce ses bulunamadi, edge-tts kullanilacak")
-                print("    Not: Windows Ayarlar > Zaman ve Dil > Konusma > Turkce ekleyin")
-                motor.stop()
+                print("    Turkce ses icin: Windows Ayarlar > Zaman ve Dil > Konusma > Turkce ekleyin")
+                self._pyttsx3_hazir = False
+                try:
+                    motor.stop()
+                except:
+                    pass
         except ImportError:
             print("[!] pyttsx3 yuklenmemis (opsiyonel)")
         except Exception as e:
@@ -238,15 +244,24 @@ class SesliYanit:
             pass
 
     def _powershell_tts(self, metin):
-        """Son care: PowerShell ile seslendir"""
+        """Son care: PowerShell ile seslendir (Turkce ses tercih edilir)"""
         try:
             import subprocess
-            temiz = metin.replace("'", "").replace('"', '').replace('\n', ' ')[:200]
+            temiz = metin.replace("'", "").replace('"', '').replace('\n', ' ').replace('`', '')[:200]
+            # Once Turkce ses bulmaya calis, bulamazsa varsayilani kullan
+            ps_script = (
+                "Add-Type -AssemblyName System.Speech; "
+                "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
+                "$voices = $s.GetInstalledVoices(); "
+                "foreach($v in $voices){ "
+                "  if($v.VoiceInfo.Culture.Name -like 'tr*'){ "
+                "    $s.SelectVoice($v.VoiceInfo.Name); break "
+                "  } "
+                "}; "
+                f"$s.Speak('{temiz}')"
+            )
             subprocess.run(
-                ["powershell", "-Command",
-                 f"Add-Type -AssemblyName System.Speech; "
-                 f"$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
-                 f"$s.Speak('{temiz}')"],
+                ["powershell", "-Command", ps_script],
                 timeout=15, capture_output=True
             )
         except Exception as e:
