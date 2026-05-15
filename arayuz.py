@@ -1,5 +1,5 @@
 """
-JARVIS Tarzi Arayuz v7.5
+JARVIS Tarzi Arayuz v7.6
 - 3 Katmanli Akilli Mimari
 - Kullanici tanima (ilk acilista isim sorar)
 - Baslangic kontrolleri ayri thread'de (GUI donmuyor)
@@ -9,6 +9,7 @@ JARVIS Tarzi Arayuz v7.5
 import sys
 import math
 import time
+from turkce import isim_temizle_ve_duzelt, turkce_baslik
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QTextEdit, QFrame, QSystemTrayIcon, QMenu,
@@ -280,7 +281,7 @@ class BaslangicThread(QThread):
                 self.ilerleme.emit("Ilk kullanim - adiniz sorulacak")
                 self.asistan.isim_bekleniyor = True
 
-            self.tamamlandi.emit(True, "Tum kontroller basarili! (v7.5)")
+            self.tamamlandi.emit(True, "Tum kontroller basarili! (v7.6)")
 
         except Exception as e:
             self.tamamlandi.emit(False, f"Hata: {str(e)}")
@@ -356,42 +357,39 @@ class AsistanThread(QThread):
                     time.sleep(1)
 
     def _isim_kaydet(self, metin):
-        """Ilk acilista isim kaydet - yankı ve gurultu filtreli"""
-        isim = metin.strip()
-
-        # Temizle: "benim adim Ahmet" -> "Ahmet"
-        for kalip in ["benim adim", "adim", "ben", "benim ismim", "ismim"]:
-            if kalip in isim.lower():
-                isim = isim.lower().replace(kalip, "").strip()
-                break
-        isim = isim.strip().title()
-
-        # Gurultu/yanki filtresi: isim en az 2 harf olmali ve
-        # asistanin kendi sorusu olmamali (hoparlor yankisi)
+        """Ilk acilista isim kaydet - Turkce isim veritabani + yanki filtreli"""
+        # Yanki filtresi - asistanin kendi sorusu olmamali
         yanki_kelimeleri = ["merhaba", "asistan", "ogrenebilir", "yardimci",
                            "dinliyorum", "miyim", "hello", "assist", "help",
                            "nasil", "olabilirim", "senin", "sesli"]
-        isim_kucuk = isim.lower()
-        yanki_mi = any(k in isim_kucuk for k in yanki_kelimeleri)
+        metin_kucuk = metin.lower().strip()
+        yanki_mi = any(k in metin_kucuk for k in yanki_kelimeleri)
 
-        if isim and len(isim) >= 2 and not yanki_mi:
-            # Sadece ilk kelimeyi al (isim genelde tek kelime)
-            isim_parca = isim.split()[0] if " " in isim else isim
-            self.asistan.hafiza.kullanici_adi_kaydet(isim_parca)
-            self.asistan.kullanici_adi = isim_parca
-            self.asistan.yapay_zeka.kullanici_adi = isim_parca
+        if yanki_mi:
+            print(f"[!] Yanki algilandi, tekrar sorulacak: '{metin}'")
+            self.yanit_geldi.emit("Adini net duyamadim. Sadece adini soyler misin?")
+            self.durum_degisti.emit("konusuyor")
+            self.asistan.sesli_yanit.konus("Adini net duyamadim. Sadece adini soyler misin?")
+            time.sleep(1.0)
+            return
+
+        # Turkce isim veritabani ile eslestir ve duzelt
+        isim_sonuc, kesinlik = isim_temizle_ve_duzelt(metin)
+
+        if isim_sonuc and len(isim_sonuc) >= 2:
+            self.asistan.hafiza.kullanici_adi_kaydet(isim_sonuc)
+            self.asistan.kullanici_adi = isim_sonuc
+            self.asistan.yapay_zeka.kullanici_adi = isim_sonuc
             self.asistan.isim_bekleniyor = False
 
-            karsilama = f"Memnun oldum {isim_parca}! Sana nasil yardimci olabilirim?"
-            self.metin_algilandi.emit(f"[Isim: {isim_parca}]")
+            karsilama = f"Memnun oldum {isim_sonuc}! Sana nasil yardimci olabilirim?"
+            self.metin_algilandi.emit(f"[Isim: {isim_sonuc} ({kesinlik})]")
             self.yanit_geldi.emit(karsilama)
             self.durum_degisti.emit("konusuyor")
             self.asistan.sesli_yanit.konus(karsilama)
             time.sleep(0.5)
         else:
-            # Yanki veya gurultu - tekrar sor
-            if yanki_mi:
-                print(f"[!] Yanki algilandi, tekrar sorulacak: '{metin}'")
+            print(f"[!] Isim anlasilamadi: '{metin}'")
             self.yanit_geldi.emit("Adini net duyamadim. Sadece adini soyler misin?")
             self.durum_degisti.emit("konusuyor")
             self.asistan.sesli_yanit.konus("Adini net duyamadim. Sadece adini soyler misin?")
@@ -604,7 +602,7 @@ class JarvisPencere(QMainWindow):
         ana_layout.addWidget(self.panel)
 
         # Baslangic
-        self.log.log_ekle("Sesli AI Asistan v7.5 baslatildi", "sistem")
+        self.log.log_ekle("Sesli AI Asistan v7.6 baslatildi", "sistem")
         self.log.log_ekle("Sistem kontrolleri yapiliyor...", "soluk")
         self.daire.durum_ayarla("yukleniyor")
 
