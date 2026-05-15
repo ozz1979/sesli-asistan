@@ -206,16 +206,19 @@ class SesliYanit:
         self._powershell_tts(kisa_metin)
 
     def _on_bellek_bul(self, metin):
-        """Metni on-bellek anahtariyla eslestir"""
+        """Metni on-bellek anahtariyla eslestir - SADECE kisa ve tam eslesme"""
         metin_kucuk = metin.lower().strip().rstrip("!.?,")
-        # Tam eslestirme
+        # 1) Tam eslestirme: metin, onbellekteki yanitla AYNI mi?
         for anahtar, tam_metin in ON_BELLEK_YANITLARI.items():
             if metin_kucuk == tam_metin.lower().rstrip("!.?,"):
                 return anahtar
-        # Icerik eslestirme
-        for anahtar in ON_BELLEK_YANITLARI:
-            if anahtar in metin_kucuk:
-                return anahtar
+        # 2) Kisa metin eslestirme: SADECE 20 karakterden kisa metinler icin
+        #    (Uzun metinler yanlis eslesmemeli - ornegin "merhaba" kelimesi
+        #     "Merhaba! Adini ogrenebilir miyim?" ile eslesmemeli)
+        if len(metin_kucuk) <= 20:
+            for anahtar in ON_BELLEK_YANITLARI:
+                if anahtar in metin_kucuk:
+                    return anahtar
         return None
 
     def _mp3_cal(self, dosya):
