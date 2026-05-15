@@ -10,13 +10,17 @@ Kahneman'ın teorisi:
 - Sistem 2 Derin: Karmaşık AI + düşünme → 5-30s
 
 AI Zinciri: Gemini → DeepSeek → Groq → Ollama → Fallback
+AI Bilgisayar Kontrolü: AI komut etiketleri [KOMUT:...] ile bilgisayarı yönetir
 """
 
+import re
 import time
 import logging
 import threading
 import requests
 import json
+import subprocess
+import os
 
 logger = logging.getLogger("ATLAS.karar")
 
@@ -44,7 +48,7 @@ class KararMerkezi:
         self._groq_model = ai_cfg.get("groq_model", "llama-3.3-70b-versatile")
         self._ollama_model = ai_cfg.get("ollama_model", "llama3")
         self._ollama_url = ai_cfg.get("ollama_url", "http://localhost:11434")
-        self._max_token = ai_cfg.get("max_token", 150)
+        self._max_token = ai_cfg.get("max_token", 200)
         self._timeout = ai_cfg.get("timeout", 8)
         self._sicaklik = ai_cfg.get("sicaklik", 0.7)
 
@@ -135,20 +139,208 @@ class KararMerkezi:
     # ══════════════════════════════════════════════════
 
     def _sistem_talimati(self):
-        """AI modelleri için sistem talimatı"""
+        """AI modelleri için sistem talimatı — bilgisayar kontrol yetenekleriyle"""
         return """Sen ATLAS adında bir Türkçe sesli asistansın. Bir insan arkadaş gibi doğal ve samimi konuşuyorsun.
+Bilgisayarı kontrol edebiliyorsun! Kullanıcı bir şey yapmanı istediğinde KOMUT etiketleri kullan.
 
-KRİTİK KURALLAR:
+KONUŞMA KURALLARI:
 1. SADECE TÜRKÇE cevap ver. Kesinlikle İngilizce kelime kullanma.
 2. Kısa ve öz cevap ver — en fazla 1-2 cümle. Sesli asistan olduğun için uzun cevaplar verme.
 3. Doğal, samimi ve sıcak konuş. Resmi olma, arkadaş gibi ol.
 4. Asla "yapay zeka olarak" veya "bir dil modeli olarak" deme. Sen ATLAS'sın.
-5. Bilmediğin konularda dürüst ol: "Bunu bilmiyorum ama araştırabilirim" de.
+5. Bilmediğin konularda dürüst ol ama kısa tut.
 6. Emoji kullanma çünkü sesli okunacak.
-7. Aşırı özür dileme. "Özür dilerim", "sakin ol", "hemen yapıyorum" gibi yaltakçı ifadeler KULLANMA. Anlamadıysan sadece "Tekrar eder misin?" de. Rahat ve kendinden emin ol.
-8. Bir şeyi yapamıyorsan veya anlamadıysan kısa ve net söyle. Abartma, drama yapma.
-9. "Açıyorum", "açtım", "yazdım", "yaptım" gibi şeyleri SADECE gerçekten yapabiliyorsan söyle. Yapamadığın şeyleri yaptığını İDDİA ETME.
-10. Eğer kullanıcı belirsiz bir komut verdiyse ne yapmak istediğini doğal bir şekilde sor. Örnek: "Ne yazmamı istiyorsun?" veya "Hangi programı açayım?". Robot gibi "çalıştıramıyorum" deme, insan gibi konuş."""
+7. Aşırı özür dileme. Rahat ve kendinden emin ol.
+8. Anlamadıysan "Tekrar eder misin?" de.
+
+BİLGİSAYAR KOMUTLARI:
+Kullanıcı bilgisayarda bir şey yapmanı isterse, yanıtının SONUNA komut etiketi ekle.
+Format: [KOMUT:tip:parametre]
+
+Kullanılabilir komutlar:
+- [KOMUT:calistir:KOMUT] → Windows komut satırı komutu çalıştırır
+  Örnekler: [KOMUT:calistir:notepad] [KOMUT:calistir:start chrome] [KOMUT:calistir:calc] [KOMUT:calistir:start excel] [KOMUT:calistir:explorer] [KOMUT:calistir:start https://www.google.com]
+- [KOMUT:yaz:METİN] → Aktif pencereye metin yazar (Türkçe destekli)
+- [KOMUT:ara:SORGU] → Google'da arama yapar
+- [KOMUT:klasor:YOL] → Klasör açar. Özel: masaustu, belgelerim, indirilenler
+- [KOMUT:ekran] → Ekran görüntüsü alır
+- [KOMUT:kisayol:TUS1+TUS2] → Klavye kısayolu. Örnekler: ctrl+s, ctrl+z, ctrl+c, ctrl+v, alt+F4, win+d
+- [KOMUT:pencere:ISLEM] → Pencere yönetimi: kucult, buyut, kapat
+- [KOMUT:ses:ISLEM] → Ses: yukselt, azalt, kapat, ac
+- [KOMUT:kapat_program:ISIM] → Program kapatır. Örnekler: chrome, notepad, explorer
+
+ÖNEMLİ: 
+- Komut etiketini YANIT METNİNDEN SONRA yaz. Kullanıcı etiketi duymayacak, sadece sözlü yanıtı duyacak.
+- Birden fazla komut kullanabilirsin: "Tamam, açıyorum! [KOMUT:calistir:notepad] [KOMUT:yaz:merhaba dünya]"
+- Bilgisayar komutu olmayan sohbet mesajlarında etiket KULLANMA.
+- "calistir" komutu ile HER Windows programını açabilirsin: notepad, calc, mspaint, explorer, taskmgr, control, snippingtool, cmd, powershell, ve "start PROGRAM" ile kısayol isimli programları.
+- Kullanıcı internette arama istiyorsa [KOMUT:ara:sorgu] kullan.
+- format, del, rd, rmdir, shutdown gibi TEHLİKELİ komutları KULLANMA.
+
+Örnek diyaloglar:
+Kullanıcı: "Chrome'u aç"
+ATLAS: "Chrome açılıyor! [KOMUT:calistir:start chrome]"
+
+Kullanıcı: "Bir metin belgesi aç ve merhaba dünya yaz"
+ATLAS: "Metin belgesi açıp yazıyorum! [KOMUT:calistir:notepad] [KOMUT:yaz:merhaba dünya]"
+
+Kullanıcı: "İnternette Türkiye hava durumu ara"
+ATLAS: "Hemen arıyorum! [KOMUT:ara:Türkiye hava durumu]"
+
+Kullanıcı: "Masaüstündeki dosyaları göster"
+ATLAS: "Masaüstünü açıyorum! [KOMUT:klasor:masaustu]"
+
+Kullanıcı: "Sesi biraz kıs"
+ATLAS: "Sesi kısıyorum. [KOMUT:ses:azalt]"
+
+Kullanıcı: "Bugün hava nasıl?"
+ATLAS: "Denizli'de bugün güneşli ve sıcak bir gün olacak gibi görünüyor." (komut yok, sadece sohbet)
+
+Kullanıcı: "Hesap makinesini aç"
+ATLAS: "Hesap makinesi açılıyor! [KOMUT:calistir:calc]"
+
+Kullanıcı: "Bu dosyayı kaydet"
+ATLAS: "Kaydediyorum! [KOMUT:kisayol:ctrl+s]"
+
+Kullanıcı: "YouTube aç"
+ATLAS: "YouTube açılıyor! [KOMUT:calistir:start https://www.youtube.com]"
+"""
+
+    # ══════════════════════════════════════════════════
+    # KOMUT ÇALIŞTIRMA
+    # ══════════════════════════════════════════════════
+
+    # Tehlikeli komutlar — bunları çalıştırma
+    _TEHLIKELI = {"format", "del ", "rmdir", "rd ", "shutdown", "rm ", "deltree",
+                  "reg delete", "net user", "cipher /w"}
+
+    def _komut_calistir(self, yanit_text):
+        """
+        AI yanıtındaki [KOMUT:...] etiketlerini parse et ve çalıştır.
+        Returns: (temiz_yanit, komut_sonuclari_listesi)
+        """
+        import bilgisayar_kontrol as bk
+
+        # Tüm komut etiketlerini bul
+        komut_pattern = r'\[KOMUT:([^\]]+)\]'
+        komutlar = re.findall(komut_pattern, yanit_text)
+
+        # Etiketleri yanıttan temizle (kullanıcı duymayacak)
+        temiz = re.sub(komut_pattern, '', yanit_text).strip()
+        temiz = re.sub(r'\s{2,}', ' ', temiz)  # çoklu boşluk temizle
+
+        sonuclar = []
+
+        for komut_str in komutlar:
+            parcalar = komut_str.split(":", 1)
+            tip = parcalar[0].strip().lower()
+            param = parcalar[1].strip() if len(parcalar) > 1 else ""
+
+            try:
+                if tip == "calistir":
+                    # Tehlike kontrolü
+                    if any(t in param.lower() for t in self._TEHLIKELI):
+                        logger.warning(f"Tehlikeli komut engellendi: {param}")
+                        sonuclar.append(("engellendi", param))
+                        continue
+                    subprocess.Popen(param, shell=True)
+                    logger.info(f"Komut çalıştırıldı: {param}")
+                    sonuclar.append(("ok", param))
+
+                elif tip == "yaz":
+                    if param:
+                        # Kısa gecikme — önceki komut (notepad açma vs) tamamlansın
+                        if sonuclar:
+                            import time as t
+                            t.sleep(1.5)
+                        basarili, mesaj = bk.metin_yaz(param)
+                        sonuclar.append(("ok" if basarili else "hata", mesaj))
+                    else:
+                        sonuclar.append(("hata", "Yazılacak metin boş"))
+
+                elif tip == "ara":
+                    if param:
+                        basarili, mesaj = bk.web_ara(param)
+                        sonuclar.append(("ok" if basarili else "hata", mesaj))
+
+                elif tip == "klasor":
+                    ozel = {
+                        "masaustu": bk.masaustu_ac,
+                        "masaüstü": bk.masaustu_ac,
+                        "belgelerim": bk.belgelerim_ac,
+                        "indirilenler": bk.indirilenler_ac,
+                    }
+                    if param.lower() in ozel:
+                        basarili, mesaj = ozel[param.lower()]()
+                    else:
+                        basarili, mesaj = bk.klasor_ac(param)
+                    sonuclar.append(("ok" if basarili else "hata", mesaj))
+
+                elif tip == "ekran":
+                    basarili, mesaj = bk.ekran_goruntusu()
+                    sonuclar.append(("ok" if basarili else "hata", mesaj))
+
+                elif tip == "kisayol":
+                    tuslar = param.replace("+", " ").split()
+                    if tuslar:
+                        basarili, mesaj = bk.kisayol_bas(*tuslar)
+                        sonuclar.append(("ok" if basarili else "hata", mesaj))
+
+                elif tip == "pencere":
+                    islem_map = {
+                        "kucult": bk.pencere_kucult,
+                        "küçült": bk.pencere_kucult,
+                        "buyut": bk.pencere_buyut,
+                        "büyüt": bk.pencere_buyut,
+                        "kapat": bk.pencere_kapat,
+                    }
+                    fn = islem_map.get(param.lower())
+                    if fn:
+                        basarili, mesaj = fn()
+                        sonuclar.append(("ok" if basarili else "hata", mesaj))
+
+                elif tip == "ses":
+                    islem_map = {
+                        "yukselt": "yukselt", "yükselt": "yukselt",
+                        "azalt": "azalt", "kıs": "azalt",
+                        "kapat": "kapat", "ac": "ac", "aç": "ac",
+                    }
+                    islem = islem_map.get(param.lower())
+                    if islem:
+                        basarili, mesaj = bk.ses_ayarla(islem)
+                        sonuclar.append(("ok" if basarili else "hata", mesaj))
+
+                elif tip == "kapat_program":
+                    # Program kapatma — taskkill kullan
+                    exe_map = {
+                        "chrome": "chrome.exe", "notepad": "notepad.exe",
+                        "word": "WINWORD.EXE", "excel": "EXCEL.EXE",
+                        "firefox": "firefox.exe", "edge": "msedge.exe",
+                        "paint": "mspaint.exe", "calculator": "Calculator.exe",
+                        "hesap makinesi": "Calculator.exe",
+                        "explorer": "explorer.exe", "spotify": "Spotify.exe",
+                        "discord": "Discord.exe", "teams": "Teams.exe",
+                        "whatsapp": "WhatsApp.exe", "telegram": "Telegram.exe",
+                        "opera": "opera.exe", "cmd": "cmd.exe",
+                        "powershell": "powershell.exe",
+                    }
+                    exe = exe_map.get(param.lower(), f"{param}.exe")
+                    subprocess.Popen(
+                        f"taskkill /im {exe} /f",
+                        shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                    )
+                    logger.info(f"Program kapatıldı: {exe}")
+                    sonuclar.append(("ok", f"{param} kapatıldı"))
+
+                else:
+                    logger.warning(f"Bilinmeyen komut tipi: {tip}")
+                    sonuclar.append(("bilinmeyen", tip))
+
+            except Exception as e:
+                logger.error(f"Komut hatası [{tip}:{param}]: {e}")
+                sonuclar.append(("hata", str(e)))
+
+        return temiz, sonuclar
 
     # ══════════════════════════════════════════════════
     # ANA KARAR FONKSİYONU
@@ -159,6 +351,7 @@ KRİTİK KURALLAR:
         Ana karar fonksiyonu.
         1. Sistem 1 (kalıp) dene → bulursa hemen döndür
         2. Bulamazsa → Sistem 2 (AI zinciri) kullan
+        3. AI yanıtındaki komutları çalıştır
         """
         baslangic = time.time()
 
@@ -206,6 +399,14 @@ KRİTİK KURALLAR:
         else:
             yol = "sistem2"
             self._istatistik["sistem2_hafif"] += 1
+
+        # ──── KOMUT ÇALIŞTIRMA ────
+        # AI yanıtında [KOMUT:...] etiketi varsa çalıştır
+        if "[KOMUT:" in ai_yanit:
+            temiz_yanit, sonuclar = self._komut_calistir(ai_yanit)
+            if sonuclar:
+                logger.info(f"AI komut sonuçları: {sonuclar}")
+            ai_yanit = temiz_yanit
 
         sure = (time.time() - baslangic) * 1000
         logger.info(f"Sistem 2 yanıt ({sure:.0f}ms): {ai_yanit[:50]}")
@@ -255,25 +456,39 @@ KRİTİK KURALLAR:
     # ══════════════════════════════════════════════════
 
     def _yanit_temizle(self, yanit):
-        """Uzun yanıtları kes, temizle"""
+        """Uzun yanıtları kes, temizle — KOMUT etiketlerini koru"""
         yanit = yanit.strip()
-        if len(yanit) > 200:
+
+        # Komut etiketlerini ayır
+        komut_pattern = r'\[KOMUT:[^\]]+\]'
+        komutlar = re.findall(komut_pattern, yanit)
+        temiz = re.sub(komut_pattern, '', yanit).strip()
+
+        # Metin kısmını kısalt
+        if len(temiz) > 200:
             for sep in [". ", "! ", "? "]:
-                idx = yanit.find(sep)
+                idx = temiz.find(sep)
                 if 10 < idx < 150:
-                    yanit = yanit[:idx + 1]
+                    temiz = temiz[:idx + 1]
                     break
             else:
-                yanit = yanit[:150] + "..."
-        return yanit
+                temiz = temiz[:150] + "..."
+
+        # Komut etiketlerini geri ekle
+        if komutlar:
+            temiz = temiz + " " + " ".join(komutlar)
+
+        return temiz
 
     def _ingilizce_mi(self, text):
         """Metnin İngilizce olup olmadığını basit kontrol et"""
+        # Komut etiketlerini temizle
+        temiz = re.sub(r'\[KOMUT:[^\]]+\]', '', text)
         ingilizce_kelimeler = {"the", "is", "are", "was", "were", "have", "has",
                                "will", "would", "could", "should", "can",
                                "hello", "hi", "how", "what", "where", "when",
                                "i am", "you are", "it is", "that is"}
-        text_lower = text.lower()
+        text_lower = temiz.lower()
         sayac = sum(1 for k in ingilizce_kelimeler if f" {k} " in f" {text_lower} ")
         return sayac >= 3
 
@@ -455,7 +670,7 @@ KRİTİK KURALLAR:
                 data = response.json()
                 yanit = data.get("response", "").strip()
                 if yanit:
-                    return yanit[:200]
+                    return self._yanit_temizle(yanit)
 
         except Exception as e:
             logger.error(f"Ollama hatası: {e}")
