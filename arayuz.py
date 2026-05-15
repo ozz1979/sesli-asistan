@@ -1,5 +1,5 @@
 """
-JARVIS Tarzi Arayuz v7.2
+JARVIS Tarzi Arayuz v7.3
 - 3 Katmanli Akilli Mimari
 - Kullanici tanima (ilk acilista isim sorar)
 - Baslangic kontrolleri ayri thread'de (GUI donmuyor)
@@ -280,7 +280,7 @@ class BaslangicThread(QThread):
                 self.ilerleme.emit("Ilk kullanim - adiniz sorulacak")
                 self.asistan.isim_bekleniyor = True
 
-            self.tamamlandi.emit(True, "Tum kontroller basarili! (v7.2)")
+            self.tamamlandi.emit(True, "Tum kontroller basarili! (v7.3)")
 
         except Exception as e:
             self.tamamlandi.emit(False, f"Hata: {str(e)}")
@@ -306,15 +306,19 @@ class AsistanThread(QThread):
             self.durum_degisti.emit("konusuyor")
             self.yanit_geldi.emit("Merhaba! Adini ogrenebilir miyim?")
             self.asistan.sesli_yanit.konus("Merhaba! Ben senin sesli asistaninim. Adini ogrenebilir miyim?")
+            # Hoparlor yankisi mikrofona dusmesin diye bekle
+            time.sleep(1.5)
         elif self.asistan.kullanici_adi:
             self.durum_degisti.emit("konusuyor")
             karsilama = f"Merhaba {self.asistan.kullanici_adi}! Seni dinliyorum."
             self.yanit_geldi.emit(karsilama)
             self.asistan.sesli_yanit.konus(karsilama)
+            time.sleep(0.5)
         else:
             self.durum_degisti.emit("konusuyor")
             self.yanit_geldi.emit("Merhaba! Seni dinliyorum.")
             self.asistan.sesli_yanit.konus("Merhaba! Seni dinliyorum.")
+            time.sleep(0.5)
 
         while self.calistir:
             try:
@@ -352,8 +356,9 @@ class AsistanThread(QThread):
                     time.sleep(1)
 
     def _isim_kaydet(self, metin):
-        """Ilk acilista isim kaydet"""
+        """Ilk acilista isim kaydet - yankı ve gurultu filtreli"""
         isim = metin.strip()
+
         # Temizle: "benim adim Ahmet" -> "Ahmet"
         for kalip in ["benim adim", "adim", "ben", "benim ismim", "ismim"]:
             if kalip in isim.lower():
@@ -361,21 +366,36 @@ class AsistanThread(QThread):
                 break
         isim = isim.strip().title()
 
-        if isim and len(isim) > 0:
-            self.asistan.hafiza.kullanici_adi_kaydet(isim)
-            self.asistan.kullanici_adi = isim
-            self.asistan.yapay_zeka.kullanici_adi = isim
+        # Gurultu/yanki filtresi: isim en az 2 harf olmali ve
+        # asistanin kendi sorusu olmamali (hoparlor yankisi)
+        yanki_kelimeleri = ["merhaba", "asistan", "ogrenebilir", "yardimci",
+                           "dinliyorum", "miyim", "hello", "assist", "help",
+                           "nasil", "olabilirim", "senin", "sesli"]
+        isim_kucuk = isim.lower()
+        yanki_mi = any(k in isim_kucuk for k in yanki_kelimeleri)
+
+        if isim and len(isim) >= 2 and not yanki_mi:
+            # Sadece ilk kelimeyi al (isim genelde tek kelime)
+            isim_parca = isim.split()[0] if " " in isim else isim
+            self.asistan.hafiza.kullanici_adi_kaydet(isim_parca)
+            self.asistan.kullanici_adi = isim_parca
+            self.asistan.yapay_zeka.kullanici_adi = isim_parca
             self.asistan.isim_bekleniyor = False
 
-            karsilama = f"Memnun oldum {isim}! Sana nasil yardimci olabilirim?"
-            self.metin_algilandi.emit(f"[Isim: {isim}]")
+            karsilama = f"Memnun oldum {isim_parca}! Sana nasil yardimci olabilirim?"
+            self.metin_algilandi.emit(f"[Isim: {isim_parca}]")
             self.yanit_geldi.emit(karsilama)
             self.durum_degisti.emit("konusuyor")
             self.asistan.sesli_yanit.konus(karsilama)
+            time.sleep(0.5)
         else:
-            self.yanit_geldi.emit("Duyamadim, tekrar soyler misin?")
+            # Yanki veya gurultu - tekrar sor
+            if yanki_mi:
+                print(f"[!] Yanki algilandi, tekrar sorulacak: '{metin}'")
+            self.yanit_geldi.emit("Adini net duyamadim. Sadece adini soyler misin?")
             self.durum_degisti.emit("konusuyor")
-            self.asistan.sesli_yanit.konus("Duyamadim, tekrar soyler misin?")
+            self.asistan.sesli_yanit.konus("Adini net duyamadim. Sadece adini soyler misin?")
+            time.sleep(1.0)
 
     def _komut_islet(self, metin):
         self.durum_degisti.emit("isliyor")
@@ -584,7 +604,7 @@ class JarvisPencere(QMainWindow):
         ana_layout.addWidget(self.panel)
 
         # Baslangic
-        self.log.log_ekle("Sesli AI Asistan v7.2 baslatildi", "sistem")
+        self.log.log_ekle("Sesli AI Asistan v7.3 baslatildi", "sistem")
         self.log.log_ekle("Sistem kontrolleri yapiliyor...", "soluk")
         self.daire.durum_ayarla("yukleniyor")
 
