@@ -46,6 +46,11 @@ ISIM_SORULARI = ["adin ne", "ismin ne", "sen kimsin", "kimsin sen",
                  "kendinizi tanitir", "kendini tanit", "kimsiniz",
                  "adini soyle", "ne demem lazim sana"]
 
+ISIM_DEGISTIR = ["adimi degistir", "ismimi degistir", "adimi guncelle",
+                 "ismimi guncelle", "beni tanimiyorsun", "beni tani",
+                 "adimi kaydet", "ismimi kaydet", "beni hatirla",
+                 "adimi sor", "ismimi sor", "beni unut", "adimi sifirla"]
+
 GOREV_SORULARI = ["gorevin ne", "ne yapiyorsun", "ne is yapiyorsun",
                   "ne ise yariyorsun", "gorevi ne", "amacin ne",
                   "ne isi yapiyorsun", "sen ne sin"]
@@ -186,6 +191,11 @@ def yerel_kalip_esle(mk, mo):
             else:
                 mevsim = "Sonbahar"
             return {"yanit": f"Simdi {mevsim} mevsimindeyiz.", "aksiyonlar": []}
+
+    # --- ISIM DEGISTIR ---
+    for s in ISIM_DEGISTIR:
+        if s in mk:
+            return {"yanit": "__ISIM_DEGISTIR__", "aksiyonlar": []}
 
     # --- ISIM SORULARI ---
     for s in ISIM_SORULARI:
