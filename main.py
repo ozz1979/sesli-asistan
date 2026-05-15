@@ -1,9 +1,10 @@
 """
-Sesli AI Asistan v6.0 - Ana Program
+Sesli AI Asistan v7.0 - Ana Program
 - 3 Katmanli Akilli Mimari (yerel + Gemini + yedek)
+- Kullanici tanima (ilk acilista isim sorar)
+- Derin Gemini baglanti testi
 - On-bellekli TTS (aninda ses)
 - Google Speech Recognition (STT)
-- Minimum CPU kullanimi
 """
 import json
 import os
@@ -28,6 +29,11 @@ class SesliAsistan:
         self.bilgisayar = BilgisayarKontrol()
         self.guncelleyici = Guncelleyici(self.config)
 
+        # Kullanici tanima
+        self.kullanici_adi = self.hafiza.kullanici_adi_al()
+        self.isim_bekleniyor = False
+        self.yapay_zeka.kullanici_adi = self.kullanici_adi
+
     def _config_yukle(self):
         config_yolu = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
         if os.path.exists(config_yolu):
@@ -38,17 +44,29 @@ class SesliAsistan:
     def baslangic_kontrolleri(self):
         print("\n[*] Sistem kontrolleri yapiliyor...\n")
 
+        # 0) Guncelleme
         print("0) Guncelleme kontrol ediliyor...")
         self.guncelleyici.baslangicta_kontrol()
 
         ai_motor = self.config.get("ai_motor", "gemini")
+
         if ai_motor == "gemini":
-            print("1) Google Gemini AI kontrol ediliyor...")
+            # 1) Gemini baglanti kontrolu
+            print("\n1) Google Gemini AI kontrol ediliyor...")
             bagli, modeller = self.yapay_zeka.baglanti_kontrol()
             if not bagli:
                 print("[UYARI] Gemini baglantisi yok - sadece yerel komutlar calisacak")
             else:
                 print(f"   [OK] Gemini bagli!")
+
+            # 2) GERCEK Gemini testi
+            print(f"\n2) Gemini API test ediliyor...")
+            test_ok, test_mesaj = self.yapay_zeka.gemini_test()
+            if test_ok:
+                print(f"   [OK] {test_mesaj}")
+            else:
+                print(f"   [UYARI] {test_mesaj}")
+                print(f"   Yerel komutlar (184+) yine de calisir!")
         else:
             print("1) Ollama baglantisi kontrol ediliyor...")
             bagli, modeller = self.yapay_zeka.baglanti_kontrol()
@@ -57,13 +75,14 @@ class SesliAsistan:
             else:
                 print(f"   [OK] Ollama bagli!")
 
-        print(f"\n2) AI modeli kontrol ediliyor...")
-        hazir, mesaj = self.yapay_zeka.model_kontrol()
-        if not hazir:
-            print(f"   [!] {mesaj} - Yerel komutlar yine de calisir")
-        else:
-            print(f"   [OK] {mesaj}")
+            print(f"\n2) AI modeli kontrol ediliyor...")
+            hazir, mesaj = self.yapay_zeka.model_kontrol()
+            if not hazir:
+                print(f"   [!] {mesaj} - Yerel komutlar yine de calisir")
+            else:
+                print(f"   [OK] {mesaj}")
 
+        # 3) Mikrofon
         print("\n3) Mikrofonlar kontrol ediliyor...")
         mikrofonlar = self.ses_tanima.mikrofon_listele()
         if not mikrofonlar:
@@ -72,6 +91,7 @@ class SesliAsistan:
         for idx, isim in mikrofonlar[:5]:
             print(f"   [MIC {idx}] {isim}")
 
+        # 4) STT
         stt_motor = self.config.get("stt_motor", "google")
         if stt_motor == "google":
             print("\n4) Google Ses Tanima hazirlaniyor...")
@@ -79,14 +99,20 @@ class SesliAsistan:
             print("\n4) Ses tanima modeli yukleniyor...")
         self.ses_tanima.modeli_yukle()
 
-        # Ollama arka plan kontrolu (RAM tasarrufu)
+        # Ollama RAM uyarisi
         self._ollama_kontrol()
 
-        print("\n[OK] Tum kontroller basarili! (v6.0 - 3 Katmanli Mimari)\n")
+        # 5) Kullanici tanima
+        if self.kullanici_adi:
+            print(f"\n5) Kullanici: {self.kullanici_adi}")
+        else:
+            print(f"\n5) Ilk kullanim - kullanici adi sorulacak")
+            self.isim_bekleniyor = True
+
+        print(f"\n[OK] Tum kontroller basarili! (v7.0 - 3 Katmanli Mimari)\n")
         return True
 
     def _ollama_kontrol(self):
-        """Ollama arka planda calisiyor mu? Gemini kullaniliyorsa uyar."""
         if self.config.get("ai_motor") != "gemini":
             return
         try:
@@ -117,9 +143,10 @@ def gui_baslat(asistan):
 def konsol_baslat(asistan):
     LOGO = r"""
 ================================================
-       SESLI AI ASISTAN v6.0
+       SESLI AI ASISTAN v7.0
   3 Katmanli Akilli Mimari
   Yerel + Gemini + Hizli TTS
+  Kullanici Tanima + Otomatik Guncelleme
 ================================================
 """
     print(LOGO)
@@ -129,7 +156,23 @@ def konsol_baslat(asistan):
         input("\nCikmak icin Enter'a basin...")
         return
 
-    asistan.sesli_yanit.konus("Merhaba! Ben senin sesli asistaninim.")
+    # Kullanici tanima
+    if asistan.isim_bekleniyor:
+        asistan.sesli_yanit.konus("Merhaba! Ben senin sesli asistaninim. Adini ogrenebilir miyim?")
+        print("\n[*] Adinizi soyleyin...")
+        isim = asistan.ses_tanima.dinle_ve_cevir()
+        if isim:
+            isim = isim.strip().title()
+            asistan.hafiza.kullanici_adi_kaydet(isim)
+            asistan.kullanici_adi = isim
+            asistan.yapay_zeka.kullanici_adi = isim
+            asistan.isim_bekleniyor = False
+            asistan.sesli_yanit.konus(f"Memnun oldum {isim}! Sana nasil yardimci olabilirim?")
+        else:
+            asistan.sesli_yanit.konus("Duyamadim ama sorun degil, daha sonra soylerebilirsin.")
+            asistan.isim_bekleniyor = False
+    else:
+        asistan.sesli_yanit.konus(f"Merhaba {asistan.kullanici_adi}! Seni dinliyorum.")
 
     while True:
         try:
@@ -153,7 +196,6 @@ def konsol_baslat(asistan):
 def _isle(asistan, metin):
     baslangic = time.time()
 
-    # AI isleme
     hafiza_ozeti = asistan.hafiza.hafiza_ozeti()
     t0 = time.time()
     yanit = asistan.yapay_zeka.komut_isle(metin, hafiza_ozeti)
@@ -193,7 +235,7 @@ def _isle(asistan, metin):
 
 
 def main():
-    print("Sesli AI Asistan v6.0 baslatiliyor...")
+    print("Sesli AI Asistan v7.0 baslatiliyor...")
     asistan = SesliAsistan()
 
     gui_var = True
