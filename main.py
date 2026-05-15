@@ -1,5 +1,5 @@
 """
-Sesli AI Asistan v7.3 - Ana Program
+Sesli AI Asistan v7.4 - Ana Program
 - 3 Katmanli Akilli Mimari (yerel + Gemini + yedek)
 - Kullanici tanima (ilk acilista isim sorar)
 - Derin Gemini baglanti testi
@@ -109,7 +109,7 @@ class SesliAsistan:
             print(f"\n5) Ilk kullanim - kullanici adi sorulacak")
             self.isim_bekleniyor = True
 
-        print(f"\n[OK] Tum kontroller basarili! (v7.3 - 3 Katmanli Mimari)\n")
+        print(f"\n[OK] Tum kontroller basarili! (v7.4 - 3 Katmanli Mimari)\n")
         return True
 
     def _ollama_kontrol(self):
@@ -143,7 +143,7 @@ def gui_baslat(asistan):
 def konsol_baslat(asistan):
     LOGO = r"""
 ================================================
-       SESLI AI ASISTAN v7.3
+       SESLI AI ASISTAN v7.4
   3 Katmanli Akilli Mimari
   Yerel + Gemini + Hizli TTS
   Kullanici Tanima + Otomatik Guncelleme
@@ -266,7 +266,7 @@ def _isle(asistan, metin):
 
 
 def main():
-    print("Sesli AI Asistan v7.3 baslatiliyor...")
+    print("Sesli AI Asistan v7.4 baslatiliyor...")
     asistan = SesliAsistan()
 
     gui_var = True
