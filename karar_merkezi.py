@@ -60,17 +60,35 @@ class KararMerkezi:
         try:
             import google.generativeai as genai
             genai.configure(api_key=self._gemini_key)
-            self._gemini_client = genai.GenerativeModel(
-                self._gemini_model,
-                generation_config={
-                    "max_output_tokens": self._max_token,
-                    "temperature": self._sicaklik,
-                },
-                system_instruction=self._sistem_talimati()
-            )
-            logger.info(f"Gemini hazır: {self._gemini_model}")
+
+            # system_instruction ile dene (yeni sürümler)
+            try:
+                self._gemini_client = genai.GenerativeModel(
+                    self._gemini_model,
+                    generation_config={
+                        "max_output_tokens": self._max_token,
+                        "temperature": self._sicaklik,
+                    },
+                    system_instruction=self._sistem_talimati()
+                )
+                self._system_instruction_destekli = True
+                logger.info(f"Gemini hazır: {self._gemini_model} (system_instruction aktif)")
+            except TypeError:
+                # Eski sürüm — system_instruction desteklemiyor
+                self._gemini_client = genai.GenerativeModel(
+                    self._gemini_model,
+                    generation_config={
+                        "max_output_tokens": self._max_token,
+                        "temperature": self._sicaklik,
+                    }
+                )
+                self._system_instruction_destekli = False
+                logger.warning(f"Gemini hazır: {self._gemini_model} (system_instruction YOK — paket eski)")
+
+        except ImportError as e:
+            logger.error(f"google-generativeai paketi kurulu değil: {e}")
         except Exception as e:
-            logger.error(f"Gemini hazırlama hatası: {e}")
+            logger.error(f"Gemini hazırlama hatası: {type(e).__name__}: {e}")
 
     def _sistem_talimati(self):
         """Gemini için sistem talimatı — bir kere ayarlanır, her istekte gönderilmez"""
@@ -189,11 +207,22 @@ KRİTİK KURALLAR:
             return None
 
         try:
-            prompt = f"{baglam}\n\nKullanıcı: {soru}"
-            response = self._gemini_client.generate_content(
-                prompt,
-                request_options={"timeout": self._timeout}
-            )
+            # system_instruction desteklenmiyorsa, prompt'a ekle
+            if getattr(self, '_system_instruction_destekli', True):
+                prompt = f"{baglam}\n\nKullanıcı: {soru}"
+            else:
+                prompt = f"{self._sistem_talimati()}\n\n{baglam}\n\nKullanıcı: {soru}"
+
+            # request_options ile dene, hata alırsa olmadan dene
+            try:
+                response = self._gemini_client.generate_content(
+                    prompt,
+                    request_options={"timeout": self._timeout}
+                )
+            except TypeError:
+                # Eski paket — request_options desteklemiyor
+                logger.debug("request_options desteklenmiyor, olmadan deneniyor")
+                response = self._gemini_client.generate_content(prompt)
 
             if response and response.text:
                 yanit = response.text.strip()
@@ -392,10 +421,15 @@ KRİTİK KURALLAR:
 
         # 5. Gerçek API testi
         try:
-            response = self._gemini_client.generate_content(
-                "Sadece 'Bağlantı başarılı' yaz, başka bir şey yazma.",
-                request_options={"timeout": 10}
-            )
+            try:
+                response = self._gemini_client.generate_content(
+                    "Sadece 'Bağlantı başarılı' yaz, başka bir şey yazma.",
+                    request_options={"timeout": 10}
+                )
+            except TypeError:
+                response = self._gemini_client.generate_content(
+                    "Sadece 'Bağlantı başarılı' yaz, başka bir şey yazma."
+                )
             if response and response.text:
                 sonuc["basarili"] = True
                 sonuc["yanit"] = response.text.strip()[:50]
