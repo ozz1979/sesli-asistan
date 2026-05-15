@@ -258,11 +258,27 @@ class GuiSinyalleri(QObject):
     surum_goster = pyqtSignal(str)
     duygu_guncelle = pyqtSignal(str)
     ses_seviyesi = pyqtSignal(float)
+    navigasyon = pyqtSignal(str)     # sidebar menü tıklama: "gecmis", "ayarlar"
 
 
 # ═══════════════════════════════════════════════════════
 #  SÜRÜKLEME BARI (çerçevesiz pencere için)
 # ═══════════════════════════════════════════════════════
+
+class TiklanabilirLabel(QLabel):
+    """Tıklanabilir QLabel — sidebar menü öğeleri için."""
+    tiklandi = pyqtSignal(str)
+
+    def __init__(self, text, aksiyon="", parent=None):
+        super().__init__(text, parent)
+        self._aksiyon = aksiyon
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self._aksiyon:
+            self.tiklandi.emit(self._aksiyon)
+        super().mousePressEvent(event)
+
 
 class SurukleBar(QFrame):
     """Çerçevesiz pencereyi sürüklemek için üst bar."""
@@ -508,8 +524,8 @@ class AtlasArayuz(QMainWindow):
         # ── GEZİNTİ bölümü ──
         lay.addWidget(self._sidebar_header("GEZİNTİ"))
         lay.addWidget(self._sidebar_item("Ana Sayfa", aktif=True))
-        lay.addWidget(self._sidebar_item("Geçmiş"))
-        lay.addWidget(self._sidebar_item("Ayarlar"))
+        lay.addWidget(self._sidebar_item("Geçmiş", aksiyon="gecmis"))
+        lay.addWidget(self._sidebar_item("Ayarlar", aksiyon="ayarlar"))
 
         lay.addSpacing(20)
 
@@ -574,8 +590,12 @@ class AtlasArayuz(QMainWindow):
         """)
         return lbl
 
-    def _sidebar_item(self, text, aktif=False):
-        lbl = QLabel(text)
+    def _sidebar_item(self, text, aktif=False, aksiyon=None):
+        if aksiyon:
+            lbl = TiklanabilirLabel(text, aksiyon)
+            lbl.tiklandi.connect(lambda a: self.sinyaller.navigasyon.emit(a))
+        else:
+            lbl = QLabel(text)
         lbl.setFixedHeight(38)
         lbl.setCursor(Qt.CursorShape.PointingHandCursor)
 
