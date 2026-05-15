@@ -1,8 +1,9 @@
 """
-JARVIS Tarzi Arayuz v6.0
+JARVIS Tarzi Arayuz v7.0
 - 3 Katmanli Akilli Mimari
+- Kullanici tanima (ilk acilista isim sorar)
 - Baslangic kontrolleri ayri thread'de (GUI donmuyor)
-- Otomatik baslatma
+- Mikrofon otomatik baslar
 - Non-blocking mimari
 """
 import sys
@@ -220,7 +221,7 @@ class LogPaneli(QTextEdit):
 
 
 class BaslangicThread(QThread):
-    """Baslangic kontrollerini ayri thread'de yapar - GUI donmuyor"""
+    """Baslangic kontrollerini ayri thread'de yapar"""
     tamamlandi = pyqtSignal(bool, str)
     ilerleme = pyqtSignal(str)
 
@@ -239,21 +240,25 @@ class BaslangicThread(QThread):
             ai_motor = self.asistan.config.get("ai_motor", "gemini")
             if ai_motor == "gemini":
                 self.ilerleme.emit("Google Gemini AI kontrol ediliyor...")
+                bagli, modeller = self.asistan.yapay_zeka.baglanti_kontrol()
+                if not bagli:
+                    self.ilerleme.emit("[!] Gemini baglantisi yok - sadece yerel komutlar")
+                else:
+                    self.ilerleme.emit("[OK] Gemini bagli!")
+
+                # GERCEK Gemini testi
+                self.ilerleme.emit("Gemini API test ediliyor...")
+                test_ok, test_mesaj = self.asistan.yapay_zeka.gemini_test()
+                if test_ok:
+                    self.ilerleme.emit(f"[OK] {test_mesaj}")
+                else:
+                    self.ilerleme.emit(f"[!] {test_mesaj}")
+                    self.ilerleme.emit("Yerel komutlar (184+) yine de calisir!")
             else:
                 self.ilerleme.emit("Ollama baglantisi kontrol ediliyor...")
-
-            bagli, modeller = self.asistan.yapay_zeka.baglanti_kontrol()
-            if not bagli:
-                if ai_motor == "gemini":
-                    self.ilerleme.emit("[!] Gemini baglantisi yok - sadece yerel komutlar calisacak")
-                else:
-                    self.ilerleme.emit("[!] Ollama calismiyor - sadece yerel komutlar calisacak")
-                # Devam et - yerel komutlar yine de calisir!
-
-            self.ilerleme.emit("AI modeli kontrol ediliyor...")
-            hazir, mesaj = self.asistan.yapay_zeka.model_kontrol()
-            if not hazir:
-                self.ilerleme.emit(f"[!] {mesaj} - Yerel komutlar yine de calisir")
+                bagli, modeller = self.asistan.yapay_zeka.baglanti_kontrol()
+                if not bagli:
+                    self.ilerleme.emit("[!] Ollama calismiyor - sadece yerel komutlar")
 
             self.ilerleme.emit("Mikrofon kontrol ediliyor...")
             mikrofonlar = self.asistan.ses_tanima.mikrofon_listele()
@@ -265,10 +270,17 @@ class BaslangicThread(QThread):
             if motor == "google":
                 self.ilerleme.emit("Google Ses Tanima hazirlaniyor...")
             else:
-                self.ilerleme.emit("Whisper modeli yukleniyor (ilk seferde yavas)...")
+                self.ilerleme.emit("Whisper modeli yukleniyor...")
             self.asistan.ses_tanima.modeli_yukle()
 
-            self.tamamlandi.emit(True, "Tum kontroller basarili! (v6.0 - 3 Katmanli)")
+            # Kullanici tanima durumu
+            if self.asistan.kullanici_adi:
+                self.ilerleme.emit(f"Kullanici: {self.asistan.kullanici_adi}")
+            else:
+                self.ilerleme.emit("Ilk kullanim - adiniz sorulacak")
+                self.asistan.isim_bekleniyor = True
+
+            self.tamamlandi.emit(True, "Tum kontroller basarili! (v7.0)")
 
         except Exception as e:
             self.tamamlandi.emit(False, f"Hata: {str(e)}")
@@ -287,8 +299,22 @@ class AsistanThread(QThread):
         self.calistir = True
 
     def run(self):
-        # Dinlemeye baslamadan once ses_tanima'yi tekrar aktif et
         self.asistan.ses_tanima.tekrar_baslat()
+
+        # Karsilama mesaji
+        if self.asistan.isim_bekleniyor:
+            self.durum_degisti.emit("konusuyor")
+            self.yanit_geldi.emit("Merhaba! Adini ogrenebilir miyim?")
+            self.asistan.sesli_yanit.konus("Merhaba! Ben senin sesli asistaninim. Adini ogrenebilir miyim?")
+        elif self.asistan.kullanici_adi:
+            self.durum_degisti.emit("konusuyor")
+            karsilama = f"Merhaba {self.asistan.kullanici_adi}! Seni dinliyorum."
+            self.yanit_geldi.emit(karsilama)
+            self.asistan.sesli_yanit.konus(karsilama)
+        else:
+            self.durum_degisti.emit("konusuyor")
+            self.yanit_geldi.emit("Merhaba! Seni dinliyorum.")
+            self.asistan.sesli_yanit.konus("Merhaba! Seni dinliyorum.")
 
         while self.calistir:
             try:
@@ -299,14 +325,22 @@ class AsistanThread(QThread):
                     break
 
                 if metin:
+                    # Isim bekleniyor mu?
+                    if self.asistan.isim_bekleniyor:
+                        self._isim_kaydet(metin)
+                        continue
+
                     from yapay_zeka import turkce_normalize
                     metin_kucuk = turkce_normalize(metin.lower().strip())
                     cikis_komutlari = ["kapat kendini", "kendini kapat", "cikis", "gule gule"]
                     if any(k in metin_kucuk for k in cikis_komutlari):
                         self.yanit_geldi.emit("Gorusmek uzere!")
+                        self.durum_degisti.emit("konusuyor")
+                        self.asistan.sesli_yanit.konus("Gorusmek uzere!")
                         self.durum_degisti.emit("bekliyor")
                         self.calistir = False
                         break
+
                     self.metin_algilandi.emit(metin)
                     self._komut_islet(metin)
             except Exception as e:
@@ -316,6 +350,32 @@ class AsistanThread(QThread):
                     import traceback
                     traceback.print_exc()
                     time.sleep(1)
+
+    def _isim_kaydet(self, metin):
+        """Ilk acilista isim kaydet"""
+        isim = metin.strip()
+        # Temizle: "benim adim Ahmet" -> "Ahmet"
+        for kalip in ["benim adim", "adim", "ben", "benim ismim", "ismim"]:
+            if kalip in isim.lower():
+                isim = isim.lower().replace(kalip, "").strip()
+                break
+        isim = isim.strip().title()
+
+        if isim and len(isim) > 0:
+            self.asistan.hafiza.kullanici_adi_kaydet(isim)
+            self.asistan.kullanici_adi = isim
+            self.asistan.yapay_zeka.kullanici_adi = isim
+            self.asistan.isim_bekleniyor = False
+
+            karsilama = f"Memnun oldum {isim}! Sana nasil yardimci olabilirim?"
+            self.metin_algilandi.emit(f"[Isim: {isim}]")
+            self.yanit_geldi.emit(karsilama)
+            self.durum_degisti.emit("konusuyor")
+            self.asistan.sesli_yanit.konus(karsilama)
+        else:
+            self.yanit_geldi.emit("Duyamadim, tekrar soyler misin?")
+            self.durum_degisti.emit("konusuyor")
+            self.asistan.sesli_yanit.konus("Duyamadim, tekrar soyler misin?")
 
     def _komut_islet(self, metin):
         self.durum_degisti.emit("isliyor")
@@ -371,17 +431,14 @@ class AsistanThread(QThread):
         yanit_metni = yanit.get("yanit", "Tamam!")
         self.durum_degisti.emit("konusuyor")
 
-        # Hangi katman kullanildi?
         katman = "Yerel" if ai_sure < 0.05 else "AI"
         self.yanit_geldi.emit(f"{yanit_metni}  [{katman} {ai_sure:.1f}sn]")
 
-        # TTS - sesli cevap ver
         self.asistan.sesli_yanit.konus(yanit_metni)
 
         toplam = time.time() - baslangic
         print(f"[SURE] {katman}:{ai_sure:.1f}s Toplam:{toplam:.1f}s")
 
-        # Dinlemeye geri don
         self.durum_degisti.emit("dinliyor")
 
     def durdur(self):
@@ -427,7 +484,7 @@ class JarvisPencere(QMainWindow):
         baslik.setStyleSheet("color: #00c8ff; background: transparent; border: none;")
         baslik_bar.addWidget(baslik)
         baslik_bar.addStretch()
-        surum_label = QLabel(f"v{self.asistan.config.get('surum', '4.0')}")
+        surum_label = QLabel(f"v{self.asistan.config.get('surum', '7.0')}")
         surum_label.setFont(QFont("Consolas", 9))
         surum_label.setStyleSheet("color: #506882; background: transparent; border: none;")
         baslik_bar.addWidget(surum_label)
@@ -515,14 +572,12 @@ class JarvisPencere(QMainWindow):
 
         ana_layout.addWidget(self.panel)
 
-        # Log mesajlari
-        self.log.log_ekle("Sesli AI Asistan v6.0 baslatildi", "sistem")
+        # Baslangic
+        self.log.log_ekle("Sesli AI Asistan v7.0 baslatildi", "sistem")
         self.log.log_ekle("Sistem kontrolleri yapiliyor...", "soluk")
-
-        # Daire yukleniyor durumunda
         self.daire.durum_ayarla("yukleniyor")
 
-        # Otomatik baslat - ayri thread'de kontroller
+        # Otomatik baslat
         QTimer.singleShot(500, self._otomatik_baslat)
 
     def _buton_stili(self, renk):
@@ -575,10 +630,7 @@ class JarvisPencere(QMainWindow):
                 self.show()
                 self.activateWindow()
 
-    # ---- Otomatik Baslangic (ayri thread) ----
-
     def _otomatik_baslat(self):
-        """Kontrolleri ayri thread'de yap, GUI donmasin"""
         self.baslangic_thread = BaslangicThread(self.asistan)
         self.baslangic_thread.ilerleme.connect(self._baslangic_ilerleme)
         self.baslangic_thread.tamamlandi.connect(self._baslangic_tamamlandi)
@@ -591,9 +643,8 @@ class JarvisPencere(QMainWindow):
     def _baslangic_tamamlandi(self, basarili, mesaj):
         if basarili:
             self.log.log_ekle(mesaj, "sistem")
-            self.log.log_ekle("Dinlemeye baslandi! Konusmaya baslayin...", "sistem")
 
-            # Dinleme thread'ini baslat
+            # Mikrofon otomatik baslar - BASLAT butonu yok
             self.btn_baslat.setText("DURDUR")
             self.btn_baslat.setStyleSheet(self._ana_buton_stili("#ff3c3c"))
             self.btn_baslat.setEnabled(True)
@@ -619,8 +670,6 @@ class JarvisPencere(QMainWindow):
             self.btn_baslat.setStyleSheet(self._ana_buton_stili("#ffa000"))
             self.btn_baslat.setEnabled(True)
 
-    # ---- Buton Kontrolleri ----
-
     def _baslat_durdur(self):
         if self.asistan_thread and self.asistan_thread.isRunning():
             self._durdur()
@@ -628,7 +677,6 @@ class JarvisPencere(QMainWindow):
             self._baslat()
 
     def _baslat(self):
-        # Tekrar baslat - kontrolleri tekrar yap
         self.btn_baslat.setText("BASLATIYOR...")
         self.btn_baslat.setEnabled(False)
         self.daire.durum_ayarla("yukleniyor")
@@ -648,8 +696,6 @@ class JarvisPencere(QMainWindow):
     def _sohbet_sifirla(self):
         self.asistan.yapay_zeka.sohbet_sifirla()
         self.log.log_ekle("Sohbet gecmisi sifirlandi.", "sistem")
-
-    # ---- Signal Handlers ----
 
     def _metin_algilandi(self, metin):
         self.log.log_ekle(metin, "kullanici")
@@ -698,8 +744,6 @@ class JarvisPencere(QMainWindow):
             self.asistan_thread.wait(3000)
         self.tray.hide()
         QApplication.quit()
-
-    # ---- Pencere Surukle ----
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
