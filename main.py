@@ -225,9 +225,25 @@ def _isle(asistan, metin):
             asistan.hafiza.ogren(k, v)
     asistan.hafiza.gecmis_ekle(metin, str(aksiyonlar), basarili)
 
+    # Isim degistirme komutu
+    yanit_metni = yanit.get("yanit", "Tamam!")
+    if yanit_metni == "__ISIM_DEGISTIR__":
+        asistan.sesli_yanit.konus("Tabii! Adini soyler misin?")
+        print("\n[*] Adinizi soyleyin...")
+        isim = asistan.ses_tanima.dinle_ve_cevir()
+        if isim:
+            isim = isim.strip().title()
+            asistan.hafiza.kullanici_adi_kaydet(isim)
+            asistan.kullanici_adi = isim
+            asistan.yapay_zeka.kullanici_adi = isim
+            asistan.sesli_yanit.konus(f"Memnun oldum {isim}! Seni hatirlayacagim.")
+        else:
+            asistan.sesli_yanit.konus("Duyamadim, daha sonra tekrar dene.")
+        return
+
     # Sesli yanit
     t2 = time.time()
-    asistan.sesli_yanit.konus(yanit.get("yanit", "Tamam!"))
+    asistan.sesli_yanit.konus(yanit_metni)
     tts_sure = time.time() - t2
 
     toplam = time.time() - baslangic
