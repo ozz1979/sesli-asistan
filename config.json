@@ -13,7 +13,7 @@
     "enerji_esigi": 300,
     "hafiza_dosyasi": "hafiza.json",
     "maks_sohbet_gecmisi": 8,
-    "guncelleme_repo": "",
+    "guncelleme_repo": "ozz1979/sesli-asistan",
     "guncelleme_url": "",
     "otomatik_guncelle": true,
     "mikrofon_index": null
