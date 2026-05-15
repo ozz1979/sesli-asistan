@@ -11,7 +11,7 @@ echo  ╚═══════════════════════�
 echo.
 
 :: Python kontrolü
-echo [1/6] Python kontrol ediliyor...
+echo [1/5] Python kontrol ediliyor...
 python --version >nul 2>&1
 if errorlevel 1 (
     echo HATA: Python bulunamadi! python.org adresinden Python yukleyin.
@@ -22,7 +22,7 @@ python --version
 echo.
 
 :: Sanal ortam
-echo [2/6] Sanal ortam olusturuluyor...
+echo [2/5] Sanal ortam olusturuluyor...
 if not exist "venv" (
     python -m venv venv
     echo Sanal ortam olusturuldu.
@@ -32,7 +32,7 @@ if not exist "venv" (
 echo.
 
 :: Paketler
-echo [3/6] Paketler yukleniyor (bu biraz surebilir)...
+echo [3/5] Paketler yukleniyor (bu biraz surebilir)...
 echo.
 
 venv\Scripts\python.exe -m pip install --upgrade pip >nul 2>&1
@@ -45,13 +45,9 @@ echo   SpeechRecognition yukleniyor...
 venv\Scripts\python.exe -m pip install SpeechRecognition>=3.10.0 >nul 2>&1
 if errorlevel 1 echo   UYARI: SpeechRecognition yuklenemedi!
 
-echo   PyAudio yukleniyor...
-venv\Scripts\python.exe -m pip install PyAudio>=0.2.14 >nul 2>&1
-if errorlevel 1 (
-    echo   UYARI: PyAudio yuklenemedi, alternatif deneniyor...
-    venv\Scripts\python.exe -m pip install pipwin >nul 2>&1
-    venv\Scripts\python.exe -m pipwin install pyaudio >nul 2>&1
-)
+echo   sounddevice yukleniyor...
+venv\Scripts\python.exe -m pip install sounddevice>=0.4.6 >nul 2>&1
+if errorlevel 1 echo   UYARI: sounddevice yuklenemedi!
 
 echo   edge-tts yukleniyor...
 venv\Scripts\python.exe -m pip install edge-tts>=6.1.0 >nul 2>&1
@@ -68,10 +64,6 @@ if errorlevel 1 echo   UYARI: google-generativeai yuklenemedi!
 echo   numpy yukleniyor...
 venv\Scripts\python.exe -m pip install numpy>=1.26.0 >nul 2>&1
 if errorlevel 1 echo   UYARI: numpy yuklenemedi!
-
-echo   sounddevice yukleniyor...
-venv\Scripts\python.exe -m pip install sounddevice>=0.4.6 >nul 2>&1
-if errorlevel 1 echo   UYARI: sounddevice yuklenemedi!
 
 echo   scipy yukleniyor...
 venv\Scripts\python.exe -m pip install scipy>=1.12.0 >nul 2>&1
@@ -90,21 +82,13 @@ echo   Tum paketler yuklendi!
 echo.
 
 :: Hafıza dizini
-echo [4/6] Hafiza dizini olusturuluyor...
+echo [4/5] Hafiza dizini olusturuluyor...
 if not exist "hafiza" mkdir hafiza
 if not exist "ses_cache" mkdir ses_cache
 echo.
 
-:: API Key kontrolü
-echo [5/6] API Key kontrolu...
-echo.
-echo   Gemini API key'inizi config.json dosyasindaki
-echo   "gemini_api_key" alanina yazin.
-echo   (Ucretsiz: https://aistudio.google.com/apikey)
-echo.
-
 :: Windows başlangıcına ekleme
-echo [6/6] Windows baslangicina eklemek ister misiniz?
+echo [5/5] Windows baslangicina eklemek ister misiniz?
 set /p baslangic="  (E/H): "
 if /i "%baslangic%"=="E" (
     echo Set WshShell = CreateObject("WScript.Shell") > "%TEMP%\atlas_startup.vbs"
@@ -113,7 +97,7 @@ if /i "%baslangic%"=="E" (
     copy "%TEMP%\atlas_startup.vbs" "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\atlas_startup.vbs" >nul 2>&1
     echo   ATLAS Windows baslangicina eklendi!
 ) else (
-    echo   Atlandı.
+    echo   Atlandi.
 )
 
 echo.
