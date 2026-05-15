@@ -267,6 +267,89 @@ def ses_ayarla(islem):
         return False, str(e)
 
 
+def tum_programlari_kapat():
+    """
+    Tüm açık kullanıcı pencerelerini kapatır.
+    Sistem süreçlerini (explorer, ATLAS kendisi) korur.
+    """
+    try:
+        # PowerShell: Görünür pencereleri olan süreçleri bul, sistemi hariç tut
+        ps_script = """
+$korunanlar = @('explorer','Atlas','python','pythonw','cmd','powershell','conhost','dwm','csrss','smss','winlogon','services','lsass','svchost','RuntimeBroker','SearchHost','StartMenuExperienceHost','ShellExperienceHost','TextInputHost','SystemSettings','ctfmon','taskhostw')
+$pencereli = Get-Process | Where-Object { $_.MainWindowHandle -ne 0 -and $_.MainWindowTitle -ne '' -and $korunanlar -notcontains $_.Name }
+$kapatilan = @()
+foreach ($p in $pencereli) {
+    try {
+        $p.CloseMainWindow() | Out-Null
+        $kapatilan += $p.Name
+    } catch {}
+}
+$kapatilan -join ','
+"""
+        r = subprocess.run(
+            ["powershell", "-Command", ps_script],
+            capture_output=True, text=True, timeout=10
+        )
+        kapatilan = r.stdout.strip()
+        if kapatilan:
+            liste = [x.strip() for x in kapatilan.split(",") if x.strip()]
+            logger.info(f"Tüm programlar kapatıldı: {liste}")
+            return True, f"{len(liste)} program kapatıldı"
+        else:
+            return True, "Açık program bulunamadı"
+    except Exception as e:
+        logger.error(f"Tüm programları kapatma hatası: {e}")
+        return False, str(e)
+
+
+def bilgisayari_kapat(gecikme=30):
+    """
+    Bilgisayarı kapatır.
+    Güvenlik: 30 saniye gecikme, iptal edilebilir.
+    """
+    try:
+        subprocess.Popen(f"shutdown /s /t {gecikme}", shell=True)
+        logger.info(f"Bilgisayar {gecikme}s sonra kapanacak")
+        return True, f"Bilgisayar {gecikme} saniye sonra kapanacak. İptal etmek istersen 'iptal et' de."
+    except Exception as e:
+        logger.error(f"Bilgisayar kapatma hatası: {e}")
+        return False, str(e)
+
+
+def bilgisayari_yeniden_baslat(gecikme=30):
+    """
+    Bilgisayarı yeniden başlatır.
+    Güvenlik: 30 saniye gecikme, iptal edilebilir.
+    """
+    try:
+        subprocess.Popen(f"shutdown /r /t {gecikme}", shell=True)
+        logger.info(f"Bilgisayar {gecikme}s sonra yeniden başlayacak")
+        return True, f"Bilgisayar {gecikme} saniye sonra yeniden başlayacak. İptal etmek istersen 'iptal et' de."
+    except Exception as e:
+        logger.error(f"Bilgisayar yeniden başlatma hatası: {e}")
+        return False, str(e)
+
+
+def kapatma_iptal():
+    """Zamanlanmış shutdown/restart'ı iptal eder."""
+    try:
+        subprocess.Popen("shutdown /a", shell=True)
+        logger.info("Kapatma/yeniden başlatma iptal edildi")
+        return True, "Kapatma işlemi iptal edildi"
+    except Exception as e:
+        return False, str(e)
+
+
+def uyku_modu():
+    """Bilgisayarı uyku moduna alır."""
+    try:
+        subprocess.Popen("rundll32.exe powrprof.dll,SetSuspendState 0,1,0", shell=True)
+        logger.info("Uyku moduna geçiliyor")
+        return True, "Uyku moduna geçiliyor"
+    except Exception as e:
+        return False, str(e)
+
+
 def bilgisayar_bilgisi():
     """Bilgisayar temel bilgilerini döndürür"""
     try:
