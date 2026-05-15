@@ -11,11 +11,11 @@ Bu modül metin → ses dönüşümü ve ön-bellek yönetimi yapar.
 
 import asyncio
 import hashlib
+import math
 import os
 import threading
 import time
 import logging
-import re
 from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger("ATLAS.konusma")
@@ -46,6 +46,10 @@ ON_BELLEK_YANITLARI = [
     "Tamam, anladım.",
     "Bir saniye düşüneyim.",
     "Seni duyamadım, tekrar eder misin?",
+    # Bilgisayar komutları
+    "Chrome açılıyor!",
+    "Not Defteri açılıyor!",
+    "Hesap Makinesi açılıyor!",
 ]
 
 
@@ -53,6 +57,7 @@ class KonusmaUretimi:
     """
     Broca Alanı — konuşma üretim merkezi.
     Metin → ses dönüşümü, ön-bellek, ses çalma.
+    Konuşurken küreye ses seviyesi gönderir.
     """
 
     def __init__(self, config=None):
@@ -70,6 +75,9 @@ class KonusmaUretimi:
         self._executor = ThreadPoolExecutor(max_workers=2)
         self._lock = threading.Lock()
         self._caliniyor = False
+
+        # Ses seviye callback — GUI küresine bağlanır
+        self.ses_seviye_callback = None
 
         # Pygame mixer
         self._mixer_hazir = False
@@ -92,12 +100,10 @@ class KonusmaUretimi:
             self._mixer_hazir = False
 
     def _cache_yolu(self, text):
-        """Metin için cache dosya yolu"""
         h = hashlib.md5(text.encode()).hexdigest()[:12]
         return os.path.join(self._cache_dir, f"{h}.mp3")
 
     def _cache_var_mi(self, text):
-        """Cache'de bu metin var mı?"""
         yol = self._cache_yolu(text)
         return os.path.exists(yol)
 
@@ -105,20 +111,15 @@ class KonusmaUretimi:
         """Edge-TTS ile ses oluştur (async)"""
         try:
             import edge_tts
-            communicate = edge_tts.Communicate(
-                text, self._ses, rate=self._hiz
-            )
+            communicate = edge_tts.Communicate(text, self._ses, rate=self._hiz)
             await communicate.save(dosya_yolu)
             return True
         except Exception as e:
             logger.error(f"Edge-TTS hatası: {e}")
-            # Tekrar dene
             try:
                 import edge_tts
                 await asyncio.sleep(1)
-                communicate = edge_tts.Communicate(
-                    text, self._ses, rate=self._hiz
-                )
+                communicate = edge_tts.Communicate(text, self._ses, rate=self._hiz)
                 await communicate.save(dosya_yolu)
                 return True
             except Exception as e2:
@@ -148,7 +149,7 @@ class KonusmaUretimi:
         logger.info(f"Ön bellek hazır ({len(ON_BELLEK_YANITLARI)} yanıt)")
 
     def _ses_cal(self, dosya_yolu):
-        """Ses dosyasını çal"""
+        """Ses dosyasını çal — çalarken küreye ses seviyesi gönder"""
         if not self._mixer_hazir:
             self._mixer_baslat()
         if not self._mixer_hazir:
@@ -159,15 +160,44 @@ class KonusmaUretimi:
             import pygame
             with self._lock:
                 self._caliniyor = True
+
             pygame.mixer.music.load(dosya_yolu)
             pygame.mixer.music.play()
+
+            # ── Konuşurken küreye doğal konuşma efekti gönder ──
+            konusma_baslangic = time.time()
             while pygame.mixer.music.get_busy():
-                time.sleep(0.05)
+                if self.ses_seviye_callback:
+                    t = time.time() - konusma_baslangic
+                    # İnsan konuşmasını simüle et — düzensiz, doğal dalga
+                    a = (
+                        0.35
+                        + 0.25 * abs(math.sin(t * 7.2))
+                        * abs(math.sin(t * 3.1 + 0.7))
+                        + 0.15 * abs(math.sin(t * 11.5 + 1.3))
+                        + 0.10 * abs(math.sin(t * 5.8 + 2.1))
+                    )
+                    # Arada kısa duraklamalar (doğal konuşma ritmi)
+                    if math.sin(t * 2.3) > 0.85:
+                        a *= 0.3
+                    self.ses_seviye_callback(min(1.0, a))
+                time.sleep(0.04)
+
+            # Konuşma bitti — küreyi yavaşça sıfırla
+            if self.ses_seviye_callback:
+                for i in range(6):
+                    self.ses_seviye_callback(0.15 * (5 - i) / 5)
+                    time.sleep(0.04)
+                self.ses_seviye_callback(0.0)
+
             with self._lock:
                 self._caliniyor = False
             return True
+
         except Exception as e:
             logger.error(f"Ses çalma hatası: {e}")
+            if self.ses_seviye_callback:
+                self.ses_seviye_callback(0.0)
             with self._lock:
                 self._caliniyor = False
             return False
@@ -175,13 +205,8 @@ class KonusmaUretimi:
     def konus(self, text, bekle=True):
         """
         Metin → konuş.
-        
         1. Cache'de varsa hemen çal
         2. Yoksa oluştur ve çal
-        
-        Args:
-            text: Söylenecek metin
-            bekle: True ise ses bitene kadar bekle
         """
         if not text:
             return
@@ -189,7 +214,6 @@ class KonusmaUretimi:
         text = text.strip()
         dosya = self._cache_yolu(text)
 
-        # Cache kontrol
         if not os.path.exists(dosya):
             logger.debug(f"TTS oluşturuluyor: '{text[:50]}...'")
             basarili = self._tts_olustur(text, dosya)
@@ -197,23 +221,17 @@ class KonusmaUretimi:
                 logger.error(f"TTS oluşturulamadı: '{text[:50]}'")
                 return
 
-        # Çal
         if bekle:
             self._ses_cal(dosya)
         else:
             self._executor.submit(self._ses_cal, dosya)
 
     def on_bellekten_konus(self, text):
-        """
-        Ön bellekteki yanıtı hemen çal (daha hızlı).
-        Eğer tam eşleşme yoksa, en kısa benzer yanıtı bul.
-        """
-        # Tam eşleşme
+        """Ön bellekteki yanıtı hemen çal (daha hızlı)."""
         if self._cache_var_mi(text):
             self._ses_cal(self._cache_yolu(text))
             return True
 
-        # Benzer eşleşme (kısa metinler için substring)
         if len(text) <= self._on_bellek_esik:
             text_lower = text.lower().strip()
             for onb in ON_BELLEK_YANITLARI:
@@ -222,7 +240,6 @@ class KonusmaUretimi:
                         self._ses_cal(self._cache_yolu(onb))
                         return True
 
-        # Cache'de yok, normal konuş
         self.konus(text)
         return True
 
@@ -237,17 +254,17 @@ class KonusmaUretimi:
             return self._caliniyor
 
     def durdur(self):
-        """Sesi durdur"""
         try:
             import pygame
             pygame.mixer.music.stop()
+            if self.ses_seviye_callback:
+                self.ses_seviye_callback(0.0)
             with self._lock:
                 self._caliniyor = False
         except Exception:
             pass
 
     def temizle(self):
-        """Kaynakları temizle"""
         self._executor.shutdown(wait=False)
         try:
             import pygame
