@@ -468,20 +468,30 @@ class HafizaSistemi:
         """
         Hafıza konsolidasyonu — beyin uykuda yapar.
         Sık tekrarlanan kalıpları güçlendir, kullanılmayanları zayıflat.
+        NOT: Sadece gerçek kullanıcı mesajlarını kalıp olarak kaydet,
+        dahili etiketleri (sik_kullanilan_X) asla kaydetme.
         """
-        # Oturumdaki tekrarlanan niyetleri prosedürel belleğe aktar
+        # Oturumdaki tekrarlanan kullanıcı mesajlarını analiz et
         kayitlar = self.oturum.getir()
-        niyet_sayac = {}
-        for k in kayitlar:
-            niyet = k.get("niyet")
-            if niyet:
-                niyet_sayac[niyet] = niyet_sayac.get(niyet, 0) + 1
+        mesaj_sayac = {}
+        mesaj_yanit = {}
 
-        for niyet, sayi in niyet_sayac.items():
-            if sayi >= 2:  # Aynı niyet 2+ kez → kalıp olarak kaydet
-                self.prosedurel.kalip_guncelle(
-                    niyet, f"sik_kullanilan_{niyet}", basarili=True
-                )
+        for i, k in enumerate(kayitlar):
+            if k.get("rol") == "kullanici" and k.get("mesaj"):
+                mesaj = k["mesaj"].lower().strip()
+                mesaj_sayac[mesaj] = mesaj_sayac.get(mesaj, 0) + 1
+
+                # Bu mesajdan sonraki asistan yanıtını bul
+                if i + 1 < len(kayitlar) and kayitlar[i + 1].get("rol") == "asistan":
+                    mesaj_yanit[mesaj] = kayitlar[i + 1]["mesaj"]
+
+        # Sık tekrarlanan mesajları güçlendir (gerçek yanıtlarla)
+        for mesaj, sayi in mesaj_sayac.items():
+            if sayi >= 2 and mesaj in mesaj_yanit:
+                yanit = mesaj_yanit[mesaj]
+                # Dahili etiketleri kaydetme
+                if not yanit.startswith("sik_kullanilan_"):
+                    self.prosedurel.kalip_guncelle(mesaj, yanit, basarili=True)
 
     def durum_ozeti(self):
         """Hafıza sistemi durumunu döndür"""
