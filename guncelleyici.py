@@ -153,6 +153,23 @@ class Guncelleyici:
                 pass
 
             if guncellenen > 0:
+                # config.json'daki surum numarasini guncelle
+                try:
+                    config_yolu = os.path.join(self.uygulama_klasoru, "config.json")
+                    with open(config_yolu, "r", encoding="utf-8") as f:
+                        config = json.load(f)
+                    # ZIP icindeki config'den surum al
+                    if "config.json" in zf.namelist():
+                        yeni_config = json.loads(zf.read("config.json").decode("utf-8"))
+                        yeni_surum = yeni_config.get("surum", "")
+                        if yeni_surum:
+                            config["surum"] = yeni_surum
+                            with open(config_yolu, "w", encoding="utf-8") as f:
+                                json.dump(config, f, ensure_ascii=False, indent=4)
+                            print(f"   [+] Surum guncellendi: v{yeni_surum}")
+                except Exception as e2:
+                    print(f"   [!] Surum guncelleme hatasi: {e2}")
+
                 print(f"\n[OK] {guncellenen} dosya guncellendi!")
                 print("[!] Degisikliklerin aktif olmasi icin programi yeniden baslatin.")
             else:
