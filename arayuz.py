@@ -396,6 +396,17 @@ class AsistanThread(QThread):
             self.durum_degisti.emit("dinliyor")
             return
 
+        # Isim degistirme komutu
+        yanit_metni_kontrol = yanit.get("yanit", "")
+        if yanit_metni_kontrol == "__ISIM_DEGISTIR__":
+            self.asistan.isim_bekleniyor = True
+            soru = "Tabii! Adini soyler misin?"
+            self.yanit_geldi.emit(soru)
+            self.durum_degisti.emit("konusuyor")
+            self.asistan.sesli_yanit.konus(soru)
+            self.durum_degisti.emit("dinliyor")
+            return
+
         # Aksiyonlari isle
         aksiyonlar = yanit.get("aksiyonlar", [])
         tum_basarili = True
