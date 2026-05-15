@@ -39,7 +39,7 @@ class KararMerkezi:
         self._birincil_ai = ai_cfg.get("birincil", "gemini")
         self._yedek_ai = ai_cfg.get("yedek", "ollama")
         self._gemini_model = ai_cfg.get("gemini_model", "gemini-2.0-flash")
-        self._gemini_yedek = ai_cfg.get("gemini_yedek_model", "gemini-1.5-flash")
+        self._gemini_yedek = ai_cfg.get("gemini_yedek_model", "gemini-2.0-flash-lite")
         self._gemini_key = ai_cfg.get("gemini_api_key", "")
         self._ollama_model = ai_cfg.get("ollama_model", "llama3")
         self._ollama_url = ai_cfg.get("ollama_url", "http://localhost:11434")
