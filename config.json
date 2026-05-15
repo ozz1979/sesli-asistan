@@ -1,20 +1,58 @@
 {
-    "surum": "7.6",
-    "ai_motor": "gemini",
-    "gemini_api_key": "BURAYA_API_ANAHTARINIZI_YAZIN",
-    "gemini_model": "gemini-2.0-flash",
-    "ollama_model": "llama3",
-    "ollama_url": "http://localhost:11434",
-    "stt_motor": "google",
-    "whisper_model": "base",
-    "tts_ses": "tr-TR-AhmetNeural",
-    "tts_bekleme": 0.3,
-    "sessizlik_suresi": 1.0,
-    "enerji_esigi": 300,
-    "hafiza_dosyasi": "hafiza.json",
-    "maks_sohbet_gecmisi": 8,
-    "guncelleme_repo": "ozz1979/sesli-asistan",
-    "guncelleme_url": "",
-    "otomatik_guncelle": true,
-    "mikrofon_index": null
+    "version": "8.0",
+    "asistan_adi": "ATLAS",
+    "tetik_kelime": "atlas",
+    "kullanici": {
+        "ad": "",
+        "ses_profili": {},
+        "tercihler": {}
+    },
+    "stt": {
+        "motor": "google",
+        "dil": "tr-TR",
+        "enerji_esigi": 300,
+        "dinamik_esik": true,
+        "kalibrasyon_suresi": 1.5,
+        "dinleme_suresi": 7,
+        "sessizlik_suresi": 2
+    },
+    "tts": {
+        "motor": "edge-tts",
+        "ses": "tr-TR-AhmetNeural",
+        "hiz": "+0%",
+        "on_bellek": true,
+        "on_bellek_esik": 25
+    },
+    "ai": {
+        "birincil": "gemini",
+        "yedek": "ollama",
+        "gemini_model": "gemini-2.0-flash",
+        "gemini_api_key": "",
+        "gemini_yedek_model": "gemini-1.5-flash",
+        "ollama_model": "llama3",
+        "ollama_url": "http://localhost:11434",
+        "max_token": 150,
+        "sicaklik": 0.7,
+        "timeout": 10
+    },
+    "hafiza": {
+        "calisma_bellegi_boyutu": 7,
+        "oturum_kayit": true,
+        "epizodik_kayit": true,
+        "semantik_kayit": true,
+        "prosedurel_kayit": true,
+        "konsolidasyon_esigi": 3
+    },
+    "dikkat": {
+        "aktif_mod_suresi": 45,
+        "pasif_dinleme": true,
+        "tetik_hassasiyeti": 0.6
+    },
+    "sistem": {
+        "otomatik_baslat": false,
+        "guncelleme_kontrol": true,
+        "github_repo": "ozz1979/sesli-asistan",
+        "log_seviyesi": "INFO",
+        "log_dosyasi": "atlas.log"
+    }
 }
