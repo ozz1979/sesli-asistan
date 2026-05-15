@@ -10,6 +10,8 @@ Kahneman'ın teorisi:
 - Sistem 2 Derin: Karmaşık AI + düşünme → 5-30s
 
 Bu modül hangi yolun kullanılacağına karar verir.
+
+NOT: google-genai paketi kullanır (yeni resmi SDK).
 """
 
 import time
@@ -52,46 +54,38 @@ class KararMerkezi:
         self._istatistik = {"sistem1": 0, "sistem2_hafif": 0, "sistem2_derin": 0, "hata": 0}
 
     def _gemini_hazirla(self):
-        """Gemini AI client'ı hazırla"""
+        """Gemini AI client'ı hazırla — yeni google-genai SDK"""
         if not self._gemini_key:
             logger.warning("Gemini API key ayarlanmamış — config.json'da 'gemini_api_key' alanını doldurun")
             return
 
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=self._gemini_key)
-
-            # system_instruction ile dene (yeni sürümler)
+            from google import genai
+            self._gemini_client = genai.Client(api_key=self._gemini_key)
+            logger.info(f"Gemini hazır: {self._gemini_model} (google-genai SDK)")
+        except ImportError:
+            # Yeni paket yoksa eski paketi dene
             try:
-                self._gemini_client = genai.GenerativeModel(
-                    self._gemini_model,
-                    generation_config={
-                        "max_output_tokens": self._max_token,
-                        "temperature": self._sicaklik,
-                    },
-                    system_instruction=self._sistem_talimati()
-                )
-                self._system_instruction_destekli = True
-                logger.info(f"Gemini hazır: {self._gemini_model} (system_instruction aktif)")
-            except TypeError:
-                # Eski sürüm — system_instruction desteklemiyor
-                self._gemini_client = genai.GenerativeModel(
+                import google.generativeai as genai_eski
+                genai_eski.configure(api_key=self._gemini_key)
+                self._gemini_client = genai_eski.GenerativeModel(
                     self._gemini_model,
                     generation_config={
                         "max_output_tokens": self._max_token,
                         "temperature": self._sicaklik,
                     }
                 )
-                self._system_instruction_destekli = False
-                logger.warning(f"Gemini hazır: {self._gemini_model} (system_instruction YOK — paket eski)")
-
-        except ImportError as e:
-            logger.error(f"google-generativeai paketi kurulu değil: {e}")
+                self._eski_sdk = True
+                logger.warning(f"Gemini hazır: {self._gemini_model} (ESKİ SDK — google-genai'ye geçin!)")
+            except ImportError:
+                logger.error("Gemini paketi kurulu değil! 'pip install google-genai' çalıştırın")
+            except Exception as e:
+                logger.error(f"Eski Gemini SDK hatası: {e}")
         except Exception as e:
             logger.error(f"Gemini hazırlama hatası: {type(e).__name__}: {e}")
 
     def _sistem_talimati(self):
-        """Gemini için sistem talimatı — bir kere ayarlanır, her istekte gönderilmez"""
+        """Gemini için sistem talimatı"""
         return """Sen ATLAS adında bir Türkçe sesli asistansın. Bir insan arkadaş gibi doğal ve samimi konuşuyorsun.
 
 KRİTİK KURALLAR:
@@ -101,6 +95,34 @@ KRİTİK KURALLAR:
 4. Asla "yapay zeka olarak" veya "bir dil modeli olarak" deme. Sen ATLAS'sın.
 5. Bilmediğin konularda dürüst ol: "Bunu bilmiyorum ama araştırabilirim" de.
 6. Emoji kullanma çünkü sesli okunacak."""
+
+    def _gemini_sor_yeni(self, prompt, model=None):
+        """Yeni google-genai SDK ile soru sor"""
+        from google.genai import types
+
+        kullanilacak_model = model or self._gemini_model
+
+        response = self._gemini_client.models.generate_content(
+            model=kullanilacak_model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=self._sistem_talimati(),
+                max_output_tokens=self._max_token,
+                temperature=self._sicaklik,
+            )
+        )
+        return response
+
+    def _gemini_sor_eski(self, prompt):
+        """Eski google-generativeai SDK ile soru sor (fallback)"""
+        try:
+            response = self._gemini_client.generate_content(
+                prompt,
+                request_options={"timeout": self._timeout}
+            )
+        except TypeError:
+            response = self._gemini_client.generate_content(prompt)
+        return response
 
     def karar_ver(self, text, niyet=None, duygu_sonucu=None):
         """
@@ -139,7 +161,6 @@ KRİTİK KURALLAR:
             }
 
         # ──── SİSTEM 2: AI Yanıtı ────
-        # Bağlam oluştur (kısa — hız için)
         baglam = self._baglam_olustur(text, niyet, duygu_sonucu)
 
         # Gemini dene
@@ -201,34 +222,26 @@ KRİTİK KURALLAR:
         return prompt
 
     def _gemini_sor(self, baglam, soru):
-        """Gemini AI'a sor"""
+        """Gemini AI'a sor — yeni SDK öncelikli, eski SDK fallback"""
         if not self._gemini_client:
             logger.warning("Gemini client yok — API key ayarlanmamış olabilir")
             return None
 
-        try:
-            # system_instruction desteklenmiyorsa, prompt'a ekle
-            if getattr(self, '_system_instruction_destekli', True):
-                prompt = f"{baglam}\n\nKullanıcı: {soru}"
-            else:
-                prompt = f"{self._sistem_talimati()}\n\n{baglam}\n\nKullanıcı: {soru}"
+        prompt = f"{baglam}\n\nKullanıcı: {soru}"
+        eski_sdk = getattr(self, '_eski_sdk', False)
 
-            # request_options ile dene, hata alırsa olmadan dene
-            try:
-                response = self._gemini_client.generate_content(
-                    prompt,
-                    request_options={"timeout": self._timeout}
+        try:
+            if eski_sdk:
+                response = self._gemini_sor_eski(
+                    f"{self._sistem_talimati()}\n\n{prompt}"
                 )
-            except TypeError:
-                # Eski paket — request_options desteklemiyor
-                logger.debug("request_options desteklenmiyor, olmadan deneniyor")
-                response = self._gemini_client.generate_content(prompt)
+            else:
+                response = self._gemini_sor_yeni(prompt)
 
             if response and response.text:
                 yanit = response.text.strip()
                 # Çok uzun yanıtları kes
                 if len(yanit) > 200:
-                    # İlk cümleyi al
                     for sep in [". ", "! ", "? "]:
                         idx = yanit.find(sep)
                         if 10 < idx < 150:
@@ -241,45 +254,54 @@ KRİTİK KURALLAR:
                 if self._ingilizce_mi(yanit):
                     logger.warning("Gemini İngilizce yanıt verdi, tekrar deneniyor")
                     prompt2 = f"SADECE TÜRKÇE YANITLA!\n\n{baglam}\n\nKullanıcı: {soru}"
-                    response2 = self._gemini_client.generate_content(
-                        prompt2,
-                        request_options={"timeout": self._timeout}
-                    )
-                    if response2 and response2.text:
-                        yanit = response2.text.strip()
-                        if len(yanit) > 200:
-                            yanit = yanit[:150] + "..."
+                    try:
+                        if eski_sdk:
+                            response2 = self._gemini_sor_eski(prompt2)
+                        else:
+                            response2 = self._gemini_sor_yeni(prompt2)
+                        if response2 and response2.text:
+                            yanit = response2.text.strip()
+                            if len(yanit) > 200:
+                                yanit = yanit[:150] + "..."
+                    except Exception:
+                        pass
 
                 return yanit
 
         except Exception as e:
             hata_str = str(e).lower()
-            if "429" in hata_str or "quota" in hata_str:
-                logger.warning("Gemini 429 hatası, 2s bekleniyor...")
+            if "429" in hata_str or "quota" in hata_str or "exhausted" in hata_str:
+                logger.warning("Gemini 429 hatası — kota dolmuş, yedek model deneniyor...")
                 time.sleep(2)
-                # Yedek model dene
                 return self._gemini_yedek_sor(baglam, soru)
-            logger.error(f"Gemini hatası: {e}")
+            logger.error(f"Gemini hatası: {type(e).__name__}: {e}")
 
         return None
 
     def _gemini_yedek_sor(self, baglam, soru):
         """Gemini yedek model ile sor"""
+        if not self._gemini_client:
+            return None
+
+        prompt = f"{baglam}\n\nKullanıcı: {soru}"
+        eski_sdk = getattr(self, '_eski_sdk', False)
+
         try:
-            import google.generativeai as genai
-            yedek = genai.GenerativeModel(
-                self._gemini_yedek,
-                generation_config={
-                    "max_output_tokens": self._max_token,
-                    "temperature": self._sicaklik,
-                },
-                system_instruction=self._sistem_talimati()
-            )
-            prompt = f"{baglam}\n\nKullanıcı: {soru}"
-            response = yedek.generate_content(
-                prompt,
-                request_options={"timeout": self._timeout}
-            )
+            if eski_sdk:
+                import google.generativeai as genai_eski
+                yedek = genai_eski.GenerativeModel(
+                    self._gemini_yedek,
+                    generation_config={
+                        "max_output_tokens": self._max_token,
+                        "temperature": self._sicaklik,
+                    }
+                )
+                response = yedek.generate_content(
+                    f"{self._sistem_talimati()}\n\n{prompt}"
+                )
+            else:
+                response = self._gemini_sor_yeni(prompt, model=self._gemini_yedek)
+
             if response and response.text:
                 return response.text.strip()[:200]
         except Exception as e:
@@ -387,13 +409,18 @@ KRİTİK KURALLAR:
             sonuc["cozum"] = "Geçerli bir Gemini API key girin (genellikle 39 karakter)"
             return sonuc
 
-        # 2. google-generativeai paketi kontrolü
+        # 2. Paket kontrolü
+        yeni_sdk = False
         try:
-            import google.generativeai as genai
+            from google import genai
+            yeni_sdk = True
         except ImportError:
-            sonuc["hata"] = "google-generativeai paketi kurulu değil"
-            sonuc["cozum"] = "Terminalde: pip install google-generativeai"
-            return sonuc
+            try:
+                import google.generativeai
+            except ImportError:
+                sonuc["hata"] = "Gemini paketi kurulu değil"
+                sonuc["cozum"] = "Terminalde: pip install google-genai"
+                return sonuc
 
         # 3. Client kontrolü
         if not self._gemini_client:
@@ -404,35 +431,41 @@ KRİTİK KURALLAR:
         # 4. İnternet bağlantısı kontrolü
         try:
             import urllib.request
-            urllib.request.urlopen("https://generativelanguage.googleapis.com", timeout=5)
+            urllib.request.urlopen("https://www.google.com", timeout=5)
         except Exception as e:
             hata_tur = type(e).__name__
-            sonuc["hata"] = f"Google API'ye erişilemiyor ({hata_tur})"
+            sonuc["hata"] = f"İnternete erişilemiyor ({hata_tur})"
             sonuc["detay"] = str(e)[:200]
-            if "getaddrinfo" in str(e).lower() or "name" in str(e).lower():
-                sonuc["cozum"] = "DNS sorunu — internet bağlantınızı kontrol edin"
-            elif "timeout" in str(e).lower():
-                sonuc["cozum"] = "Bağlantı zaman aşımı — firewall veya proxy sorunu olabilir"
-            elif "certificate" in str(e).lower() or "ssl" in str(e).lower():
-                sonuc["cozum"] = "SSL sertifika hatası — antivirüs yazılımınız bağlantıyı engelliyor olabilir"
-            else:
-                sonuc["cozum"] = "İnternet bağlantınızı ve firewall ayarlarınızı kontrol edin"
+            sonuc["cozum"] = "İnternet bağlantınızı kontrol edin"
             return sonuc
 
         # 5. Gerçek API testi
         try:
-            try:
-                response = self._gemini_client.generate_content(
-                    "Sadece 'Bağlantı başarılı' yaz, başka bir şey yazma.",
-                    request_options={"timeout": 10}
+            if yeni_sdk and not getattr(self, '_eski_sdk', False):
+                from google.genai import types
+                response = self._gemini_client.models.generate_content(
+                    model=self._gemini_model,
+                    contents="Sadece 'Bağlantı başarılı' yaz, başka bir şey yazma.",
+                    config=types.GenerateContentConfig(
+                        max_output_tokens=20,
+                        temperature=0.1,
+                    )
                 )
-            except TypeError:
-                response = self._gemini_client.generate_content(
-                    "Sadece 'Bağlantı başarılı' yaz, başka bir şey yazma."
-                )
+            else:
+                try:
+                    response = self._gemini_client.generate_content(
+                        "Sadece 'Bağlantı başarılı' yaz, başka bir şey yazma.",
+                        request_options={"timeout": 10}
+                    )
+                except TypeError:
+                    response = self._gemini_client.generate_content(
+                        "Sadece 'Bağlantı başarılı' yaz, başka bir şey yazma."
+                    )
+
             if response and response.text:
                 sonuc["basarili"] = True
                 sonuc["yanit"] = response.text.strip()[:50]
+                sonuc["sdk"] = "google-genai (yeni)" if (yeni_sdk and not getattr(self, '_eski_sdk', False)) else "google-generativeai (eski)"
                 return sonuc
             else:
                 sonuc["hata"] = "Gemini boş yanıt döndürdü"
@@ -449,7 +482,7 @@ KRİTİK KURALLAR:
                 sonuc["cozum"] = "API key'inizin Gemini API erişimine sahip olduğundan emin olun"
             elif "429" in hata_str or "RESOURCE_EXHAUSTED" in hata_str.upper():
                 sonuc["hata"] = "API kotası dolmuş (429 Rate Limit)"
-                sonuc["cozum"] = "Biraz bekleyin veya API konsolundan kota sınırını kontrol edin"
+                sonuc["cozum"] = "Yeni API key oluşturun veya yarına kadar bekleyin"
             elif "404" in hata_str:
                 sonuc["hata"] = f"Model bulunamadı: {self._gemini_model}"
                 sonuc["cozum"] = "config.json'da 'gemini_model' değerini 'gemini-2.0-flash' olarak değiştirin"
@@ -458,7 +491,7 @@ KRİTİK KURALLAR:
                 sonuc["cozum"] = "İnternet hızınızı kontrol edin, VPN varsa kapatmayı deneyin"
             elif "ssl" in hata_str.lower() or "certificate" in hata_str.lower():
                 sonuc["hata"] = "SSL sertifika hatası"
-                sonuc["cozum"] = "Antivirüs yazılımınız HTTPS trafiğini tarıyor olabilir — geçici olarak devre dışı bırakın"
+                sonuc["cozum"] = "Antivirüs yazılımınız HTTPS trafiğini tarıyor olabilir"
             else:
                 sonuc["hata"] = f"Beklenmeyen hata: {type(e).__name__}"
                 sonuc["detay"] = hata_str[:200]
