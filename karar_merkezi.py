@@ -42,7 +42,7 @@ class KararMerkezi:
         self._ollama_model = ai_cfg.get("ollama_model", "llama3")
         self._ollama_url = ai_cfg.get("ollama_url", "http://localhost:11434")
         self._max_token = ai_cfg.get("max_token", 150)
-        self._timeout = ai_cfg.get("timeout", 10)
+        self._timeout = ai_cfg.get("timeout", 6)
         self._sicaklik = ai_cfg.get("sicaklik", 0.7)
 
         self._gemini_client = None
@@ -54,7 +54,7 @@ class KararMerkezi:
     def _gemini_hazirla(self):
         """Gemini AI client'ı hazırla"""
         if not self._gemini_key:
-            logger.warning("Gemini API key ayarlanmamış")
+            logger.warning("Gemini API key ayarlanmamış — config.json'da 'gemini_api_key' alanını doldurun")
             return
 
         try:
@@ -65,11 +65,24 @@ class KararMerkezi:
                 generation_config={
                     "max_output_tokens": self._max_token,
                     "temperature": self._sicaklik,
-                }
+                },
+                system_instruction=self._sistem_talimati()
             )
             logger.info(f"Gemini hazır: {self._gemini_model}")
         except Exception as e:
             logger.error(f"Gemini hazırlama hatası: {e}")
+
+    def _sistem_talimati(self):
+        """Gemini için sistem talimatı — bir kere ayarlanır, her istekte gönderilmez"""
+        return """Sen ATLAS adında bir Türkçe sesli asistansın. Bir insan arkadaş gibi doğal ve samimi konuşuyorsun.
+
+KRİTİK KURALLAR:
+1. SADECE TÜRKÇE cevap ver. Kesinlikle İngilizce kelime kullanma.
+2. Kısa ve öz cevap ver — en fazla 1-2 cümle. Sesli asistan olduğun için uzun cevaplar verme.
+3. Doğal, samimi ve sıcak konuş. Resmi olma, arkadaş gibi ol.
+4. Asla "yapay zeka olarak" veya "bir dil modeli olarak" deme. Sen ATLAS'sın.
+5. Bilmediğin konularda dürüst ol: "Bunu bilmiyorum ama araştırabilirim" de.
+6. Emoji kullanma çünkü sesli okunacak."""
 
     def karar_ver(self, text, niyet=None, duygu_sonucu=None):
         """
@@ -108,7 +121,7 @@ class KararMerkezi:
             }
 
         # ──── SİSTEM 2: AI Yanıtı ────
-        # Bağlam oluştur
+        # Bağlam oluştur (kısa — hız için)
         baglam = self._baglam_olustur(text, niyet, duygu_sonucu)
 
         # Gemini dene
@@ -138,41 +151,45 @@ class KararMerkezi:
         }
 
     def _baglam_olustur(self, text, niyet, duygu_sonucu):
-        """AI'a gönderilecek bağlam prompt'u oluştur"""
+        """AI'a gönderilecek bağlam prompt'u — kısa ve öz"""
         ad = self.hafiza.kullanici_bilgisi_getir("ad", "")
 
-        # Hafıza bağlamı
-        hafiza_baglam = self.hafiza.baglam_olustur()
+        # Son 3 konuşma (kısa bağlam)
+        son_konusmalar = ""
+        try:
+            calisma = self.hafiza.calisma.getir()
+            if calisma:
+                satirlar = []
+                for item in calisma[-3:]:
+                    rol = item.get("rol", "?")
+                    mesaj = item.get("mesaj", "")[:80]
+                    if rol == "kullanici":
+                        satirlar.append(f"Kullanıcı: {mesaj}")
+                    elif rol == "asistan":
+                        satirlar.append(f"ATLAS: {mesaj}")
+                if satirlar:
+                    son_konusmalar = "\nSon konuşma:\n" + "\n".join(satirlar)
+        except Exception:
+            pass
 
         # Duygu bilgisi
         duygu_str = ""
         if duygu_sonucu:
             duygu = duygu_sonucu.get("duygu", "notr")
             if duygu != "notr":
-                duygu_str = f"\nKullanıcının mevcut duygu durumu: {duygu}"
+                duygu_str = f"\nKullanıcı şu an {duygu} hissediyor."
 
-        prompt = f"""Sen ATLAS adında bir Türkçe sesli asistansın. 
-Kullanıcının adı: {ad}
-{hafiza_baglam}
-{duygu_str}
-
-KRİTİK KURALLAR:
-1. SADECE TÜRKÇE YANITLA. Kesinlikle İngilizce kullanma.
-2. Kısa ve öz cevap ver (1-3 cümle).
-3. Doğal, samimi ve sıcak bir dil kullan.
-4. Kullanıcıya adıyla hitap et.
-5. Bilmediğin konularda dürüst ol, "Bunu bilmiyorum ama araştırabilirim" de.
-6. Asla "yapay zeka olarak" veya "bir dil modeli olarak" deme. Sen ATLAS'sın.
-"""
+        prompt = f"Kullanıcının adı: {ad}{son_konusmalar}{duygu_str}"
         return prompt
 
     def _gemini_sor(self, baglam, soru):
         """Gemini AI'a sor"""
         if not self._gemini_client:
+            logger.warning("Gemini client yok — API key ayarlanmamış olabilir")
             return None
 
         try:
-            prompt = f"{baglam}\n\nKullanıcı: {soru}\nATLAS:"
+            prompt = f"{baglam}\n\nKullanıcı: {soru}"
             response = self._gemini_client.generate_content(
                 prompt,
                 request_options={"timeout": self._timeout}
@@ -180,24 +197,37 @@ KRİTİK KURALLAR:
 
             if response and response.text:
                 yanit = response.text.strip()
+                # Çok uzun yanıtları kes
+                if len(yanit) > 200:
+                    # İlk cümleyi al
+                    for sep in [". ", "! ", "? "]:
+                        idx = yanit.find(sep)
+                        if 10 < idx < 150:
+                            yanit = yanit[:idx + 1]
+                            break
+                    else:
+                        yanit = yanit[:150] + "..."
+
                 # İngilizce yanıt kontrolü
                 if self._ingilizce_mi(yanit):
                     logger.warning("Gemini İngilizce yanıt verdi, tekrar deneniyor")
-                    prompt2 = f"{baglam}\n\nÖNEMLİ: SADECE TÜRKÇE YANITLA!\n\nKullanıcı: {soru}\nATLAS:"
+                    prompt2 = f"SADECE TÜRKÇE YANITLA!\n\n{baglam}\n\nKullanıcı: {soru}"
                     response2 = self._gemini_client.generate_content(
                         prompt2,
                         request_options={"timeout": self._timeout}
                     )
                     if response2 and response2.text:
                         yanit = response2.text.strip()
+                        if len(yanit) > 200:
+                            yanit = yanit[:150] + "..."
 
                 return yanit
 
         except Exception as e:
             hata_str = str(e).lower()
             if "429" in hata_str or "quota" in hata_str:
-                logger.warning("Gemini 429 hatası, 3s bekleniyor...")
-                time.sleep(3)
+                logger.warning("Gemini 429 hatası, 2s bekleniyor...")
+                time.sleep(2)
                 # Yedek model dene
                 return self._gemini_yedek_sor(baglam, soru)
             logger.error(f"Gemini hatası: {e}")
@@ -213,15 +243,16 @@ KRİTİK KURALLAR:
                 generation_config={
                     "max_output_tokens": self._max_token,
                     "temperature": self._sicaklik,
-                }
+                },
+                system_instruction=self._sistem_talimati()
             )
-            prompt = f"{baglam}\n\nKullanıcı: {soru}\nATLAS:"
+            prompt = f"{baglam}\n\nKullanıcı: {soru}"
             response = yedek.generate_content(
                 prompt,
                 request_options={"timeout": self._timeout}
             )
             if response and response.text:
-                return response.text.strip()
+                return response.text.strip()[:200]
         except Exception as e:
             logger.error(f"Gemini yedek hatası: {e}")
         return None
@@ -229,16 +260,17 @@ KRİTİK KURALLAR:
     def _ollama_sor(self, baglam, soru):
         """Ollama yerel AI'a sor"""
         try:
-            # Önce Ollama çalışıyor mu kontrol et
+            # Önce Ollama çalışıyor mu kontrol et (hızlı timeout)
             try:
-                r = requests.get(f"{self._ollama_url}/api/tags", timeout=2)
+                r = requests.get(f"{self._ollama_url}/api/tags", timeout=1.5)
                 if r.status_code != 200:
                     return None
             except Exception:
                 logger.debug("Ollama erişilemez")
                 return None
 
-            prompt = f"{baglam}\n\nKullanıcı: {soru}\nATLAS:"
+            sistem = self._sistem_talimati()
+            prompt = f"{sistem}\n\n{baglam}\n\nKullanıcı: {soru}\nATLAS:"
             response = requests.post(
                 f"{self._ollama_url}/api/generate",
                 json={
@@ -250,14 +282,14 @@ KRİTİK KURALLAR:
                         "temperature": self._sicaklik,
                     }
                 },
-                timeout=20
+                timeout=15
             )
 
             if response.status_code == 200:
                 data = response.json()
                 yanit = data.get("response", "").strip()
                 if yanit:
-                    return yanit
+                    return yanit[:200]
 
         except Exception as e:
             logger.error(f"Ollama hatası: {e}")
@@ -269,7 +301,7 @@ KRİTİK KURALLAR:
         niyet_adi = niyet.get("niyet", "") if niyet else ""
 
         fallback = {
-            "saat_sor": None,  # kalıp motorunda halledilmeli
+            "saat_sor": None,
             "tarih_sor": None,
             "selam": "Merhaba! Sana nasıl yardımcı olabilirim?",
             "hal_hatir": "İyiyim, teşekkürler! Sen nasılsın?",
@@ -280,7 +312,11 @@ KRİTİK KURALLAR:
         if yanit:
             return yanit
 
-        return "Şu an cevap veremiyorum, biraz sonra tekrar dener misin?"
+        # API key yoksa özel mesaj
+        if not self._gemini_key:
+            return "Yapay zeka bağlantım henüz ayarlanmamış. Config dosyasındaki API anahtarını kontrol eder misin?"
+
+        return "Hmm, şu an buna cevap veremedim. Biraz sonra tekrar dener misin?"
 
     def _ingilizce_mi(self, text):
         """Metnin İngilizce olup olmadığını basit kontrol et"""
