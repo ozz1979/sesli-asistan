@@ -157,6 +157,10 @@ class AtlasBeyin:
         self.ses.ses_seviye_callback = ses_gui_gonder
         self.konusma.ses_seviye_callback = ses_gui_gonder
 
+        # ── Sidebar navigasyon sinyalini bağla ──
+        if self.arayuz:
+            self.arayuz.navigasyon.connect(self._navigasyon_isle)
+
     def baslat(self):
         """ATLAS'ı başlat"""
         self._calisiyor = True
@@ -179,13 +183,19 @@ class AtlasBeyin:
         self._gui_durum("Ses motoru hazırlanıyor...")
         self._gui_mesaj("sistem", "✅ Ses motoru hazır")
 
-        # 3. AI kontrol
-        api_key = self.config.get("ai", {}).get("gemini_api_key", "")
-        if api_key:
-            masked = api_key[:8] + "..." + api_key[-4:]
-            self._gui_mesaj("sistem", f"✅ Gemini AI hazır ({masked})")
+        # 3. AI bağlantı testi (derinlemesine)
+        self._gui_durum("AI bağlantısı test ediliyor...")
+        test = self.karar.baglanti_test()
+        if test["basarili"]:
+            api_key = self.config.get("ai", {}).get("gemini_api_key", "")
+            masked = api_key[:6] + "..." + api_key[-4:] if len(api_key) > 10 else "***"
+            self._gui_mesaj("sistem", f"✅ Gemini AI bağlantısı başarılı! ({test['model']}, Key: {masked})")
         else:
-            self._gui_mesaj("sistem", "⚠️ Gemini API key ayarlanmamış — config.json'da 'gemini_api_key' alanını doldurun")
+            self._gui_mesaj("sistem", f"⚠️ Gemini AI HATASI: {test['hata']}")
+            if test.get("cozum"):
+                self._gui_mesaj("sistem", f"💡 Çözüm: {test['cozum']}")
+            if test.get("detay"):
+                logger.error(f"Gemini bağlantı detayı: {test['detay']}")
 
         # 4. Hafıza durumu
         h_durum = self.hafiza.durum_ozeti()
@@ -430,6 +440,100 @@ class AtlasBeyin:
         self.ses.durdur()
         self.konusma.temizle()
         logger.info("ATLAS durduruldu")
+
+    # ── NAVİGASYON ──
+
+    def _navigasyon_isle(self, hedef):
+        """Sidebar menü tıklamalarını işle"""
+        if hedef == "gecmis":
+            threading.Thread(target=self._gecmis_goster, daemon=True).start()
+        elif hedef == "ayarlar":
+            threading.Thread(target=self._ayarlar_goster, daemon=True).start()
+
+    def _gecmis_goster(self):
+        """Konuşma geçmişini sohbet panelinde göster"""
+        self._gui_mesaj("sistem", "━━━ Konuşma Geçmişi ━━━")
+
+        # Bu oturum
+        kayitlar = self.oturum_kayitlari()
+        if kayitlar:
+            self._gui_mesaj("sistem", f"Bu oturumda {len(kayitlar)} mesaj:")
+            for k in kayitlar[-15:]:  # Son 15 mesaj
+                rol = k.get("rol", "?")
+                mesaj = k.get("mesaj", "")
+                if rol in ("kullanici", "asistan"):
+                    self._gui_mesaj(rol, mesaj)
+        else:
+            self._gui_mesaj("sistem", "Bu oturumda henüz konuşma yok.")
+
+        # Geçmiş oturumlar
+        son = self.hafiza.epizodik.son_oturumlar(5)
+        if son:
+            self._gui_mesaj("sistem", f"\n📚 Geçmiş oturumlar ({self.hafiza.epizodik.toplam_oturum()} toplam):")
+            for ot in son:
+                if isinstance(ot, dict):
+                    tarih = ot.get("tarih", "?")[:16].replace("T", " ")
+                    sure = ot.get("sure_dk", 0)
+                    sayi = ot.get("mesaj_sayisi", 0)
+                    konu = ot.get("konu", "genel")
+                    self._gui_mesaj("sistem", f"  {tarih} — {sayi} mesaj, {sure}dk ({konu})")
+
+    def oturum_kayitlari(self):
+        """Bu oturumdaki tüm mesajları döndür"""
+        try:
+            return self.hafiza.oturum.getir()
+        except Exception:
+            return []
+
+    def _ayarlar_goster(self):
+        """Sistem ayarlarını sohbet panelinde göster"""
+        self._gui_mesaj("sistem", "━━━ Sistem Ayarları ━━━")
+
+        # AI durumu
+        api_key = self.config.get("ai", {}).get("gemini_api_key", "")
+        if api_key:
+            masked = api_key[:6] + "..." + api_key[-4:] if len(api_key) > 10 else "***"
+            self._gui_mesaj("sistem", f"🤖 Gemini API Key: {masked}")
+        else:
+            self._gui_mesaj("sistem", "⚠️ Gemini API Key: BOŞ — config.json'dan ayarlayın!")
+
+        model = self.config.get("ai", {}).get("gemini_model", "?")
+        yedek = self.config.get("ai", {}).get("gemini_yedek_model", "?")
+        self._gui_mesaj("sistem", f"🤖 AI Modeli: {model} (Yedek: {yedek})")
+
+        # Ses motoru
+        ses = self.config.get("tts", {}).get("ses", "?")
+        hiz = self.config.get("tts", {}).get("hiz", "?")
+        self._gui_mesaj("sistem", f"🔊 TTS: {ses} (Hız: {hiz})")
+
+        # STT
+        motor = self.config.get("stt", {}).get("motor", "?")
+        dil = self.config.get("stt", {}).get("dil", "?")
+        esik = self.ses.esik_bilgisi()
+        self._gui_mesaj("sistem", f"🎤 STT: {motor} ({dil}), Eşik: {esik.get('enerji_esigi', '?'):.0f}")
+
+        # Hafıza
+        h = self.hafiza.durum_ozeti()
+        self._gui_mesaj("sistem", f"🧠 Hafıza: Çalışma {h['calisma_bellegi']}/7, Oturum {h['oturum_kayit']}, Epizodik {h['epizodik_oturum']} oturum")
+
+        # Sürüm + güncelleme
+        surum = self.config.get("version", "?")
+        repo = self.config.get("sistem", {}).get("github_repo", "?")
+        self._gui_mesaj("sistem", f"📦 Sürüm: v{surum} ({repo})")
+
+        # Kullanıcı
+        ad = self.config.get("kullanici", {}).get("ad", "")
+        self._gui_mesaj("sistem", f"👤 Kullanıcı: {ad if ad else 'Henüz tanınmadı'}")
+
+        # Bağlantı durumu testi
+        self._gui_mesaj("sistem", "\n🔍 Bağlantı testi yapılıyor...")
+        test = self.karar.baglanti_test()
+        if test["basarili"]:
+            self._gui_mesaj("sistem", f"✅ Gemini bağlantısı aktif ve çalışıyor!")
+        else:
+            self._gui_mesaj("sistem", f"❌ Gemini hatası: {test['hata']}")
+            if test.get("cozum"):
+                self._gui_mesaj("sistem", f"💡 {test['cozum']}")
 
     # ── GUI Yardımcıları ──
 
