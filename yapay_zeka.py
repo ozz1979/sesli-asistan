@@ -58,10 +58,12 @@ URL_HARITASI = {
 }
 
 # Gemini KISA sistem promptu (kisa = hizli yanit)
-SISTEM_PROMPTU = """Turkce sesli asistansin. JSON yanit ver.
-{"yanit":"kisa cevap","aksiyonlar":[{"fonksiyon":"ad","parametreler":{}}],"ogren":{"k":"v"}}
+SISTEM_PROMPTU = """Sen Turkce sesli asistansin. SADECE TURKCE YANITLA. ASLA INGILIZCE KULLANMA.
+JSON yanit ver:
+{"yanit":"kisa turkce cevap","aksiyonlar":[{"fonksiyon":"ad","parametreler":{}}],"ogren":{"k":"v"}}
 Fonksiyonlar: uygulama_ac(isim), web_ara(sorgu), url_ac(url), dosya_bul(isim), ekran_goruntusu(), metin_yaz(metin), tus_bas(tuslar[]), bilgisayar_bilgi(), islem_kapat(isim), ses_ayarla(seviye 0-100)
-"ogren": kullanici tercihlerini kaydet. Aksiyon yoksa aksiyonlar:[] yaz."""
+"ogren": kullanici tercihlerini kaydet. Aksiyon yoksa aksiyonlar:[] yaz.
+ONEMLI: Yanitlarin HER ZAMAN Turkce olmali. Ingilizce kelime kullanma."""
 
 # Gemini modelleri - fallback zinciri
 GEMINI_MODELLERI = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash"]
@@ -542,7 +544,7 @@ class YapayZeka:
             print("[!] Ollama baglantisi yok, yerel yanit veriliyor")
             return self._akilli_hata_yaniti(metin)
 
-        mesajlar = [{"role": "system", "content": SISTEM_PROMPTU}]
+        mesajlar = [{"role": "system", "content": SISTEM_PROMPTU + "\nHER ZAMAN TURKCE YANITLA. INGILIZCE KONUSMA."}]
         if self.kullanici_adi:
             mesajlar.append({"role": "system", "content": f"Kullanicinin adi: {self.kullanici_adi}"})
         if hafiza_ozeti:
