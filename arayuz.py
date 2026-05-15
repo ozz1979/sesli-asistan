@@ -1,9 +1,9 @@
 """
-ATLAS - AURA Arayüz v8.2b
+ATLAS - AURA Arayüz v8.2c
 ==========================
-AURA tarzı organik parlayan küre animasyonu.
-Küre = tek ses göstergesi, konuşmaya göre hareket eder.
-Sol navigasyon bütün/akıcı, dalga formu barları yok.
+AURA tarzı 3 sütunlu layout:
+  Sol menü | Ortada büyük organik küre | Sağda sohbet
+Küre tek ses göstergesi — konuşmaya göre hareket eder.
 """
 
 import math
@@ -17,72 +17,74 @@ from datetime import datetime
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QTextEdit, QFrame, QGraphicsDropShadowEffect,
-    QSizePolicy
+    QSizePolicy, QSpacerItem
 )
 from PyQt6.QtCore import (
     Qt, QTimer, pyqtSignal, QObject, QRectF, QPointF, QSize
 )
 from PyQt6.QtGui import (
     QFont, QColor, QPainter, QPen, QRadialGradient, QPixmap, QIcon,
-    QPainterPath, QLinearGradient
+    QPainterPath, QLinearGradient, QBrush
 )
 
 logger = logging.getLogger("ATLAS.arayuz")
 
-# ─── RENK PALETİ ───
+# ─── RENK PALETİ (AURA tarzı derin mavi) ───
 C = {
-    "bg":        "#06091a",
-    "bg2":       "#0a0f22",
-    "sidebar":   "#080d20",
-    "panel":     "#0c1228",
-    "border":    "#0e1a30",
-    "cyan":      "#00d4ff",
-    "cyan2":     "#00b8e6",
-    "cyan_dim":  "#006080",
-    "cyan_glow": "#0090bb",
-    "green":     "#00ff88",
-    "orange":    "#ff8800",
-    "red":       "#ff3333",
-    "text":      "#c0d8e8",
-    "text_hi":   "#e0f0ff",
-    "dim":       "#4a6078",
-    "menu_active": "#0d1a38",
+    "bg":         "#050a18",
+    "bg2":        "#081024",
+    "sidebar":    "#060c1c",
+    "panel":      "#0a1228",
+    "chat_bg":    "#070e20",
+    "border":     "#0c1a30",
+    "cyan":       "#00d4ff",
+    "cyan2":      "#00c0ee",
+    "cyan_dim":   "#005878",
+    "cyan_glow":  "#0098cc",
+    "teal":       "#00e8d0",
+    "green":      "#00ff88",
+    "orange":     "#ff8800",
+    "red":        "#ff3333",
+    "text":       "#b8d4e6",
+    "text_hi":    "#daeeff",
+    "dim":        "#3e5a72",
+    "menu_active":"#0a1838",
 }
 
 
 # ═══════════════════════════════════════════════════════
-#  ORGANİK KÜRE — Tek ses göstergesi
+#  ORGANİK KÜRE — AURA tarzı, ses tepkili
 # ═══════════════════════════════════════════════════════
 
 class OrganikKureWidget(QWidget):
     """
-    AURA tarzı organik küre. Atlas konuştukça ses seviyesine
-    göre nabız atar, büyür-küçülür, daha hızlı döner.
+    AURA benzeri organik parlayan küre.
+    Ses seviyesine göre: boyut, deformasyon, hız, parıltı değişir.
     """
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setMinimumSize(280, 260)
+        self.setMinimumSize(300, 300)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         self._angle = 0.0
         self._pulse = 0.0
         self._mod = "pasif"
         self._durum_text = "Başlatılıyor..."
-        self._ses_seviyesi = 0.0       # 0..1 — gerçek zamanlı ses
+        self._ses_seviyesi = 0.0
         self._ses_hedef = 0.0
-        self._ses_smooth = 0.0         # yumuşatılmış ses
+        self._ses_smooth = 0.0
 
         self._hizlar = {
-            "pasif":  {"donus": 0.12, "nabiz": 0.8},
-            "aktif":  {"donus": 0.35, "nabiz": 1.5},
-            "isim":   {"donus": 0.30, "nabiz": 1.2},
-            "mesgul": {"donus": 0.80, "nabiz": 2.5},
+            "pasif":  {"donus": 0.10, "nabiz": 0.7},
+            "aktif":  {"donus": 0.30, "nabiz": 1.4},
+            "isim":   {"donus": 0.25, "nabiz": 1.1},
+            "mesgul": {"donus": 0.70, "nabiz": 2.2},
         }
 
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._animate)
-        self._timer.start(33)
+        self._timer.start(30)
 
     def set_mod(self, mod):
         self._mod = mod
@@ -91,27 +93,21 @@ class OrganikKureWidget(QWidget):
         self._durum_text = text
 
     def set_ses_seviyesi(self, seviye):
-        """0.0 - 1.0 arası ses seviyesi (TTS çıkışı veya mikrofon)"""
         self._ses_hedef = max(0.0, min(1.0, seviye))
 
     def _animate(self):
         hiz = self._hizlar.get(self._mod, self._hizlar["pasif"])
-
-        # Ses seviyesi yumuşatma
-        self._ses_smooth += (self._ses_hedef - self._ses_smooth) * 0.18
+        self._ses_smooth += (self._ses_hedef - self._ses_smooth) * 0.16
         ses = self._ses_smooth
 
-        # Meşgul modda (konuşurken) otomatik ses simülasyonu
         if self._mod == "mesgul" and self._ses_hedef < 0.05:
             t = time.time()
-            ses = 0.3 + 0.4 * abs(math.sin(t * 4.2)) * abs(math.sin(t * 1.7))
+            ses = 0.25 + 0.45 * abs(math.sin(t * 3.8)) * abs(math.sin(t * 1.5))
             self._ses_smooth = ses
 
-        # Ses seviyesine göre hız artışı
-        ses_bonus = ses * 1.5
-        self._angle = (self._angle + hiz["donus"] + ses_bonus * 0.6) % 360
+        ses_bonus = ses * 1.6
+        self._angle = (self._angle + hiz["donus"] + ses_bonus * 0.5) % 360
         self._pulse = (self._pulse + hiz["nabiz"] + ses_bonus) % 360
-
         self.update()
 
     def paintEvent(self, event):
@@ -120,47 +116,44 @@ class OrganikKureWidget(QWidget):
 
         w, h = self.width(), self.height()
         cx, cy = w / 2, h / 2
-        base_r = min(w, h) / 2 - 30
-
+        base_r = min(w, h) / 2 - 20
         ses = self._ses_smooth
         pv = (math.sin(math.radians(self._pulse)) + 1) / 2
+        max_r = base_r * (0.82 + 0.18 * ses + 0.05 * pv)
 
-        # Ses seviyesine göre küre boyutu (nefes alır gibi)
-        max_r = base_r * (0.85 + 0.15 * ses + 0.04 * pv)
-
-        # Renk
-        hue = (0, 212, 255)
-        hue_b = (140, 240, 255)
+        # Renkler
+        hr, hg, hb = 0, 212, 255
+        br, bg_, bb = 120, 240, 255
 
         def rc(r, g, b, a):
             return QColor(r, g, b, max(0, min(255, int(a))))
 
-        # ── 1. Dış parıltı ──
-        glow_r = max_r * (1.4 + 0.3 * ses)
-        glow = QRadialGradient(cx, cy, glow_r)
-        glow.setColorAt(0, rc(*hue, 20 + 25 * ses))
-        glow.setColorAt(0.35, rc(*hue, 6 + 12 * ses))
-        glow.setColorAt(1, QColor(0, 0, 0, 0))
+        # ── 1. Geniş dış parıltı ──
+        gr = max_r * (1.6 + 0.4 * ses)
+        glow = QRadialGradient(cx, cy, gr)
+        glow.setColorAt(0.0, rc(hr, hg, hb, 22 + 30 * ses))
+        glow.setColorAt(0.25, rc(hr, hg, hb, 10 + 16 * ses))
+        glow.setColorAt(0.6, rc(hr, hg, hb, 3 + 5 * ses))
+        glow.setColorAt(1.0, QColor(0, 0, 0, 0))
         p.fillRect(self.rect(), glow)
 
-        # ── 2. Organik halkalar (5 katman) ──
-        for layer in range(5, 0, -1):
-            r = max_r * (0.18 + layer * 0.15)
-            speed = 0.3 + layer * 0.06
-            dirn = 1 if layer % 2 == 0 else -1
-            rot = self._angle * speed * dirn
+        # ── 2. Organik halkalar (6 katman — daha zengin) ──
+        for layer in range(6, 0, -1):
+            r = max_r * (0.12 + layer * 0.14)
+            sp = 0.25 + layer * 0.055
+            dr = 1 if layer % 2 == 0 else -1
+            rot = self._angle * sp * dr
 
-            # Ses seviyesine göre deformasyon artışı
-            deform_base = (0.04 + layer * 0.02) * (1.0 + ses * 1.8)
-
+            deform = (0.035 + layer * 0.022) * (1.0 + ses * 2.2)
             path = QPainterPath()
-            n = 72
+            n = 90
             for s in range(n + 1):
                 theta = s * 2 * math.pi / n
                 d = 1.0
-                d += deform_base * math.sin(3 * theta + rot * 0.05)
-                d += (deform_base * 0.65) * math.sin(5 * theta - rot * 0.035 + layer)
-                d += (deform_base * 0.35) * math.sin(2 * theta + rot * 0.02)
+                d += deform * math.sin(3 * theta + rot * 0.05)
+                d += (deform * 0.6) * math.sin(5 * theta - rot * 0.03 + layer)
+                d += (deform * 0.4) * math.sin(7 * theta + rot * 0.018 + layer * 0.7)
+                d += (deform * 0.25) * math.sin(2 * theta + rot * 0.04)
                 rx = r * d
                 x = cx + rx * math.cos(theta)
                 y = cy + rx * math.sin(theta)
@@ -170,78 +163,109 @@ class OrganikKureWidget(QWidget):
                     path.lineTo(x, y)
             path.closeSubpath()
 
-            a_fill = int(15 + (5 - layer) * 7 + 10 * ses + 4 * pv)
-            a_stroke = int(30 + (5 - layer) * 12 + 20 * ses + 6 * pv)
-            p.setPen(QPen(rc(*hue, a_stroke), 1.2 + 0.3 * ses))
-            p.setBrush(rc(*hue, a_fill))
+            a_fill = int(12 + (6 - layer) * 6 + 14 * ses + 3 * pv)
+            a_line = int(25 + (6 - layer) * 12 + 25 * ses + 5 * pv)
+            p.setPen(QPen(rc(hr, hg, hb, a_line), 1.0 + 0.4 * ses))
+            p.setBrush(rc(hr, hg, hb, a_fill))
             p.drawPath(path)
 
-        # ── 3. Çiçek yaprakları (7 adet) ──
-        for i in range(7):
+        # ── 3. Çiçek yaprakları (8 adet — AURA gülü) ──
+        for i in range(8):
             p.save()
             p.translate(cx, cy)
-            angle = self._angle * 0.35 + i * (360 / 7)
+            angle = self._angle * 0.3 + i * 45
             p.rotate(angle)
 
-            pw = max_r * (0.20 + 0.06 * ses)
-            ph = max_r * (0.55 + 0.10 * ses)
-            pa = int(18 + 15 * ses + 8 * pv)
+            pw = max_r * (0.18 + 0.07 * ses)
+            ph = max_r * (0.52 + 0.12 * ses)
+            pa = int(16 + 18 * ses + 6 * pv)
 
             pg = QRadialGradient(0, 0, ph)
-            pg.setColorAt(0, rc(*hue_b, pa + 5))
-            pg.setColorAt(0.5, rc(*hue, pa))
-            pg.setColorAt(1, QColor(0, 0, 0, 0))
+            pg.setColorAt(0.0, rc(br, bg_, bb, pa + 8))
+            pg.setColorAt(0.4, rc(hr, hg, hb, pa))
+            pg.setColorAt(1.0, QColor(0, 0, 0, 0))
 
-            p.setPen(QPen(rc(*hue, int(pa * 0.5)), 0.7))
+            p.setPen(QPen(rc(hr, hg, hb, int(pa * 0.4)), 0.6))
             p.setBrush(pg)
             p.drawEllipse(QRectF(-pw / 2, -ph / 2, pw, ph))
             p.restore()
 
-        # ── 4. Parlayan merkez ──
-        cr = max_r * (0.20 + 0.08 * ses)
-        ca = int(130 + 100 * ses + 25 * pv)
+        # ── 4. İç çiçek yaprakları (5 adet — iç katman) ──
+        for i in range(5):
+            p.save()
+            p.translate(cx, cy)
+            angle = -self._angle * 0.5 + i * 72 + 20
+            p.rotate(angle)
+
+            pw = max_r * (0.10 + 0.04 * ses)
+            ph = max_r * (0.30 + 0.06 * ses)
+            pa = int(20 + 20 * ses + 8 * pv)
+
+            pg = QRadialGradient(0, 0, ph)
+            pg.setColorAt(0.0, rc(200, 255, 255, pa + 10))
+            pg.setColorAt(0.5, rc(hr, hg, hb, pa))
+            pg.setColorAt(1.0, QColor(0, 0, 0, 0))
+
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(pg)
+            p.drawEllipse(QRectF(-pw / 2, -ph / 2, pw, ph))
+            p.restore()
+
+        # ── 5. Parlayan merkez ──
+        cr = max_r * (0.18 + 0.10 * ses)
+        ca = int(120 + 110 * ses + 25 * pv)
         cg = QRadialGradient(cx, cy, cr)
-        cg.setColorAt(0, rc(220, 255, 255, ca))
-        cg.setColorAt(0.25, rc(*hue_b, int(ca * 0.7)))
-        cg.setColorAt(0.65, rc(*hue, int(ca * 0.25)))
-        cg.setColorAt(1, QColor(0, 0, 0, 0))
+        cg.setColorAt(0.0, rc(230, 255, 255, min(255, ca)))
+        cg.setColorAt(0.2, rc(br, bg_, bb, int(ca * 0.75)))
+        cg.setColorAt(0.55, rc(hr, hg, hb, int(ca * 0.3)))
+        cg.setColorAt(1.0, QColor(0, 0, 0, 0))
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(cg)
         p.drawEllipse(QPointF(cx, cy), cr, cr)
 
-        # ── 5. Parçacıklar ──
+        # ── 6. Parçacıklar (dış yörünge) ──
         p.setPen(Qt.PenStyle.NoPen)
-        n_dots = 24
-        for i in range(n_dots):
-            orbit = max_r * (0.5 + 0.4 * abs(math.sin(i * 1.37 + self._pulse * 0.007)))
-            orbit += ses * max_r * 0.15 * math.sin(i * 2.1 + self._angle * 0.02)
-            ang = math.radians(i * (360 / n_dots) + self._angle * 0.08)
+        for i in range(28):
+            orbit = max_r * (0.55 + 0.40 * abs(math.sin(i * 1.3 + self._pulse * 0.006)))
+            orbit += ses * max_r * 0.12 * math.sin(i * 2.0 + self._angle * 0.018)
+            ang = math.radians(i * (360 / 28) + self._angle * 0.06)
             px = cx + orbit * math.cos(ang)
             py = cy + orbit * math.sin(ang)
-            da = int(40 + 80 * abs(math.sin(self._pulse * 0.013 + i * 0.7)))
-            dr = 1.3 + 1.2 * abs(math.sin(self._pulse * 0.009 + i * 1.1))
-            p.setBrush(rc(*hue_b, da))
+            da = int(35 + 80 * abs(math.sin(self._pulse * 0.012 + i * 0.65)))
+            dr = 1.2 + 1.0 * abs(math.sin(self._pulse * 0.008 + i * 1.0))
+            p.setBrush(rc(br, bg_, bb, da))
             p.drawEllipse(QPointF(px, py), dr, dr)
 
-        # ── 6. ATLAS yazısı ──
-        p.setPen(QColor(230, 248, 255, int(200 + 40 * pv)))
-        fa = QFont("Consolas", 13, QFont.Weight.Bold)
-        fa.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 5)
+        # ── 7. Yıldız parçacıkları (uzak, ince) ──
+        for i in range(14):
+            far = max_r * (0.92 + 0.18 * abs(math.sin(i * 2.7 + self._pulse * 0.004)))
+            ang = math.radians(i * 25.7 + self._angle * 0.03 + 10)
+            px = cx + far * math.cos(ang)
+            py = cy + far * math.sin(ang)
+            da = int(18 + 35 * abs(math.sin(self._pulse * 0.009 + i * 1.4)))
+            p.setBrush(rc(200, 255, 255, da))
+            p.drawEllipse(QPointF(px, py), 0.8, 0.8)
+
+        # ── 8. ATLAS yazısı ──
+        text_a = int(195 + 45 * pv)
+        p.setPen(QColor(220, 245, 255, text_a))
+        fa = QFont("Consolas", 14, QFont.Weight.Bold)
+        fa.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 6)
         p.setFont(fa)
-        p.drawText(QRectF(cx - 90, cy - 10, 180, 24),
+        p.drawText(QRectF(cx - 100, cy - 12, 200, 28),
                    Qt.AlignmentFlag.AlignCenter, "ATLAS")
 
-        # ── 7. Durum metni ──
-        p.setPen(rc(*hue, int(140 + 60 * pv)))
+        # ── 9. Durum metni ──
+        p.setPen(rc(hr, hg, hb, int(130 + 70 * pv)))
         fd = QFont("Segoe UI", 9)
         p.setFont(fd)
-        p.drawText(QRectF(cx - 130, cy + 16, 260, 20),
+        p.drawText(QRectF(cx - 140, cy + 18, 280, 22),
                    Qt.AlignmentFlag.AlignCenter, self._durum_text)
 
         p.end()
 
     def sizeHint(self):
-        return QSize(400, 360)
+        return QSize(450, 420)
 
 
 # ═══════════════════════════════════════════════════════
@@ -260,27 +284,28 @@ class GuiSinyalleri(QObject):
 
 
 # ═══════════════════════════════════════════════════════
-#  SOL MENÜ ÖĞESİ
+#  SOL MENÜ ÖĞESİ — AURA tarzı
 # ═══════════════════════════════════════════════════════
 
 class MenuOgesi(QFrame):
     def __init__(self, ikon, etiket, aktif=False, parent=None):
         super().__init__(parent)
-        self.setFixedHeight(48)
+        self.setFixedHeight(50)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(22, 0, 14, 0)
+        lay.setContentsMargins(20, 0, 10, 0)
         lay.setSpacing(14)
 
         ikon_l = QLabel(ikon)
-        ikon_l.setFont(QFont("Segoe UI", 14))
-        ikon_l.setFixedWidth(26)
+        ikon_l.setFont(QFont("Segoe UI", 15))
+        ikon_l.setFixedWidth(28)
         ikon_l.setStyleSheet("background:transparent; border:none;")
         lay.addWidget(ikon_l)
 
         text_l = QLabel(etiket)
-        text_l.setFont(QFont("Segoe UI", 11, QFont.Weight.Medium if aktif else QFont.Weight.Normal))
+        wt = QFont.Weight.DemiBold if aktif else QFont.Weight.Normal
+        text_l.setFont(QFont("Segoe UI", 11, wt))
         renk = C["text_hi"] if aktif else C["dim"]
         text_l.setStyleSheet(f"color:{renk}; background:transparent; border:none;")
         lay.addWidget(text_l)
@@ -289,17 +314,17 @@ class MenuOgesi(QFrame):
         if aktif:
             self.setStyleSheet(f"""
                 QFrame {{
-                    background: qlineargradient(x1:0, x2:1,
-                        stop:0 {C['menu_active']}, stop:1 transparent);
-                    border-left: 3px solid {C['cyan']};
+                    background: qlineargradient(x1:0,x2:1,
+                        stop:0 rgba(0,180,255,25), stop:1 transparent);
+                    border-left: 2px solid {C['cyan']};
                 }}
             """)
         else:
-            self.setStyleSheet("QFrame { background:transparent; border-left:3px solid transparent; }")
+            self.setStyleSheet("QFrame { background:transparent; border-left:2px solid transparent; }")
 
 
 # ═══════════════════════════════════════════════════════
-#  ANA PENCERE
+#  ANA PENCERE — 3 Sütun Layout (AURA gibi)
 # ═══════════════════════════════════════════════════════
 
 class AtlasArayuz(QMainWindow):
@@ -310,12 +335,10 @@ class AtlasArayuz(QMainWindow):
         self._setup_ui()
         self._connect_signals()
 
-    # ─────────────── UI ───────────────
-
     def _setup_ui(self):
         self.setWindowTitle("ATLAS — Sesli AI Asistan")
-        self.setMinimumSize(960, 680)
-        self.resize(1060, 740)
+        self.setMinimumSize(1000, 640)
+        self.resize(1120, 720)
         self._set_window_icon()
 
         self.setStyleSheet(f"""
@@ -329,42 +352,37 @@ class AtlasArayuz(QMainWindow):
         ana.setContentsMargins(0, 0, 0, 0)
         ana.setSpacing(0)
 
+        # ── ÜST BAR ──
         ana.addWidget(self._build_top_bar())
 
-        # Gövde: sidebar + içerik
+        # ── 3 SÜTUN GÖVDE ──
         govde = QWidget()
         govde_l = QHBoxLayout(govde)
         govde_l.setContentsMargins(0, 0, 0, 0)
         govde_l.setSpacing(0)
 
+        # Sol: Menü
         govde_l.addWidget(self._build_sidebar())
 
-        # İçerik: küre + sohbet
-        icerik = QWidget()
-        icerik_l = QVBoxLayout(icerik)
-        icerik_l.setContentsMargins(0, 0, 0, 0)
-        icerik_l.setSpacing(0)
-
+        # Orta: Küre (büyük, bol alan)
+        kure_container = QWidget()
+        kure_container.setStyleSheet(f"background: {C['bg']};")
+        kure_lay = QVBoxLayout(kure_container)
+        kure_lay.setContentsMargins(0, 0, 0, 0)
+        kure_lay.setSpacing(0)
         self.kure = OrganikKureWidget()
-        icerik_l.addWidget(self.kure, stretch=3)
+        kure_lay.addWidget(self.kure)
+        govde_l.addWidget(kure_container, stretch=5)
 
-        # İnce ayırıcı çizgi (gradient)
-        hsep = QFrame()
-        hsep.setFixedHeight(1)
-        hsep.setStyleSheet(
-            f"background: qlineargradient(x1:0,x2:1,"
-            f"stop:0 transparent, stop:0.2 {C['border']},"
-            f"stop:0.8 {C['border']}, stop:1 transparent);"
-        )
-        icerik_l.addWidget(hsep)
+        # Sağ: Sohbet paneli
+        govde_l.addWidget(self._build_chat_panel(), stretch=3)
 
-        icerik_l.addWidget(self._build_conversation(), stretch=2)
-
-        govde_l.addWidget(icerik, stretch=1)
         ana.addWidget(govde, stretch=1)
+
+        # ── ALT BAR ──
         ana.addWidget(self._build_bottom_bar())
 
-        # Saat
+        # Saat timer
         self._saat_timer = QTimer()
         self._saat_timer.timeout.connect(self._saat_guncelle)
         self._saat_timer.start(1000)
@@ -377,7 +395,6 @@ class AtlasArayuz(QMainWindow):
             if os.path.exists(p):
                 self.setWindowIcon(QIcon(p))
                 return
-        # Fallback
         px = QPixmap(64, 64)
         px.fill(Qt.GlobalColor.transparent)
         pp = QPainter(px)
@@ -395,11 +412,11 @@ class AtlasArayuz(QMainWindow):
 
     def _build_top_bar(self):
         bar = QFrame()
-        bar.setFixedHeight(52)
+        bar.setFixedHeight(50)
         bar.setStyleSheet(f"""
             QFrame {{
                 background: qlineargradient(y1:0, y2:1,
-                    stop:0 {C['panel']}, stop:1 {C['bg2']});
+                    stop:0 {C['panel']}, stop:1 {C['bg']});
                 border-bottom: 1px solid {C['border']};
             }}
         """)
@@ -407,11 +424,11 @@ class AtlasArayuz(QMainWindow):
         lay.setContentsMargins(22, 0, 22, 0)
 
         logo = QLabel("A T L A S")
-        logo.setFont(QFont("Consolas", 17, QFont.Weight.Bold))
-        logo.setStyleSheet(f"color:{C['cyan']}; letter-spacing:6px; background:transparent;")
+        logo.setFont(QFont("Consolas", 16, QFont.Weight.Bold))
+        logo.setStyleSheet(f"color:{C['cyan']}; letter-spacing:5px; background:transparent;")
         glow = QGraphicsDropShadowEffect()
-        glow.setBlurRadius(22)
-        glow.setColor(QColor(0, 212, 255, 110))
+        glow.setBlurRadius(24)
+        glow.setColor(QColor(0, 212, 255, 120))
         glow.setOffset(0, 0)
         logo.setGraphicsEffect(glow)
         lay.addWidget(logo)
@@ -424,7 +441,7 @@ class AtlasArayuz(QMainWindow):
         lay.addWidget(self.surum_label)
 
         sep = QLabel("│")
-        sep.setStyleSheet(f"color:{C['border']}; background:transparent; margin:0 10px;")
+        sep.setStyleSheet(f"color:{C['border']}; background:transparent; margin:0 8px;")
         lay.addWidget(sep)
 
         self.saat_ust = QLabel("--:--")
@@ -434,99 +451,140 @@ class AtlasArayuz(QMainWindow):
 
         return bar
 
-    # ─────────────── SOL MENÜ (bütün/akıcı) ───────────────
+    # ─────────────── SOL MENÜ ───────────────
 
     def _build_sidebar(self):
         sidebar = QFrame()
-        sidebar.setFixedWidth(180)
+        sidebar.setFixedWidth(170)
         sidebar.setStyleSheet(f"""
             QFrame {{
-                background: {C['sidebar']};
+                background: qlineargradient(x1:0, x2:1,
+                    stop:0 {C['sidebar']}, stop:1 {C['bg']});
                 border-right: 1px solid {C['border']};
             }}
         """)
         lay = QVBoxLayout(sidebar)
-        lay.setContentsMargins(0, 20, 0, 16)
-        lay.setSpacing(4)
+        lay.setContentsMargins(0, 18, 0, 14)
+        lay.setSpacing(2)
 
         lay.addWidget(MenuOgesi("🏠", "Ana Sayfa", aktif=True))
-        lay.addWidget(MenuOgesi("🧠", "Beyin Durumu"))
+        lay.addWidget(MenuOgesi("🧠", "Beyin"))
         lay.addWidget(MenuOgesi("💬", "Sohbet"))
         lay.addWidget(MenuOgesi("⚙️", "Ayarlar"))
 
         lay.addStretch()
 
-        # Alt kısım — küçük durum bilgileri (bütünleşik)
+        # Alt durum bilgileri — bütünleşik, kutu yok
         self.dikkat_val = QLabel("  🔇 Pasif")
-        self.dikkat_val.setFont(QFont("Segoe UI", 9))
-        self.dikkat_val.setStyleSheet(f"color:{C['dim']}; background:transparent; padding-left:18px;")
+        self.dikkat_val.setFont(QFont("Segoe UI", 8))
+        self.dikkat_val.setStyleSheet(f"color:{C['dim']}; padding-left:16px;")
         lay.addWidget(self.dikkat_val)
 
         self.duygu_val = QLabel("  😐 —")
-        self.duygu_val.setFont(QFont("Segoe UI", 9))
-        self.duygu_val.setStyleSheet(f"color:{C['dim']}; background:transparent; padding-left:18px;")
+        self.duygu_val.setFont(QFont("Segoe UI", 8))
+        self.duygu_val.setStyleSheet(f"color:{C['dim']}; padding-left:16px;")
         lay.addWidget(self.duygu_val)
 
-        self.hafiza_val = QLabel("  💬 0 kayıt")
-        self.hafiza_val.setFont(QFont("Segoe UI", 9))
-        self.hafiza_val.setStyleSheet(f"color:{C['dim']}; background:transparent; padding-left:18px;")
+        self.hafiza_val = QLabel("  💬 0")
+        self.hafiza_val.setFont(QFont("Segoe UI", 8))
+        self.hafiza_val.setStyleSheet(f"color:{C['dim']}; padding-left:16px;")
         lay.addWidget(self.hafiza_val)
 
         spacer = QWidget()
-        spacer.setFixedHeight(8)
+        spacer.setFixedHeight(6)
         lay.addWidget(spacer)
 
         self.tarih_label = QLabel("")
-        self.tarih_label.setFont(QFont("Consolas", 9))
-        self.tarih_label.setStyleSheet(f"color:{C['dim']}; background:transparent;")
+        self.tarih_label.setFont(QFont("Consolas", 8))
+        self.tarih_label.setStyleSheet(f"color:{C['dim']};")
         self.tarih_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lay.addWidget(self.tarih_label)
 
         return sidebar
 
-    # ─────────────── SOHBET ───────────────
+    # ─────────────── SAĞ SOHBET PANELİ ───────────────
 
-    def _build_conversation(self):
-        w = QWidget()
-        w.setStyleSheet(f"background:{C['bg']};")
-        lay = QVBoxLayout(w)
-        lay.setContentsMargins(18, 8, 18, 8)
-        lay.setSpacing(4)
+    def _build_chat_panel(self):
+        panel = QFrame()
+        panel.setStyleSheet(f"""
+            QFrame {{
+                background: qlineargradient(x1:0, x2:1,
+                    stop:0 {C['bg']}, stop:1 {C['chat_bg']});
+                border-left: 1px solid {C['border']};
+            }}
+        """)
+        lay = QVBoxLayout(panel)
+        lay.setContentsMargins(14, 14, 14, 10)
+        lay.setSpacing(6)
 
-        header = QLabel("── KONUŞMA ──")
-        header.setFont(QFont("Consolas", 8))
-        header.setStyleSheet(f"color:{C['dim']}; letter-spacing:1px;")
-        lay.addWidget(header)
+        # Başlık
+        header_lay = QHBoxLayout()
+        header_lay.setSpacing(8)
 
+        mic_icon = QLabel("🎙️")
+        mic_icon.setFont(QFont("Segoe UI", 13))
+        mic_icon.setStyleSheet("background:transparent;")
+        header_lay.addWidget(mic_icon)
+
+        header = QLabel("KONUŞMA")
+        header.setFont(QFont("Consolas", 10, QFont.Weight.Bold))
+        header.setStyleSheet(f"color:{C['cyan']}; letter-spacing:2px; background:transparent;")
+        hglow = QGraphicsDropShadowEffect()
+        hglow.setBlurRadius(14)
+        hglow.setColor(QColor(0, 212, 255, 70))
+        hglow.setOffset(0, 0)
+        header.setGraphicsEffect(hglow)
+        header_lay.addWidget(header)
+
+        header_lay.addStretch()
+        lay.addLayout(header_lay)
+
+        # İnce çizgi
+        sep = QFrame()
+        sep.setFixedHeight(1)
+        sep.setStyleSheet(
+            f"background: qlineargradient(x1:0,x2:1,"
+            f"stop:0 transparent, stop:0.2 {C['cyan_dim']},"
+            f"stop:0.8 {C['cyan_dim']}, stop:1 transparent);"
+        )
+        lay.addWidget(sep)
+
+        # Sohbet alanı
         self.konusma_alani = QTextEdit()
         self.konusma_alani.setReadOnly(True)
         self.konusma_alani.setFont(QFont("Segoe UI", 10))
         self.konusma_alani.setStyleSheet(f"""
             QTextEdit {{
-                background:{C['bg']}; color:{C['text']};
-                border:none; padding:6px;
-                selection-background-color:{C['cyan_dim']};
+                background: transparent;
+                color: {C['text']};
+                border: none;
+                padding: 6px;
+                selection-background-color: {C['cyan_dim']};
             }}
             QScrollBar:vertical {{
-                background:{C['sidebar']}; width:5px; border-radius:2px;
+                background: {C['sidebar']};
+                width: 4px;
+                border-radius: 2px;
             }}
             QScrollBar::handle:vertical {{
-                background:{C['border']}; border-radius:2px; min-height:30px;
+                background: {C['cyan_dim']};
+                border-radius: 2px;
+                min-height: 30px;
             }}
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height:0; }}
         """)
         lay.addWidget(self.konusma_alani)
 
-        return w
+        return panel
 
     # ─────────────── ALT BAR ───────────────
 
     def _build_bottom_bar(self):
         bar = QFrame()
-        bar.setFixedHeight(32)
+        bar.setFixedHeight(30)
         bar.setStyleSheet(f"""
             QFrame {{
-                background:{C['sidebar']};
+                background: {C['sidebar']};
                 border-top: 1px solid {C['border']};
             }}
         """)
@@ -534,12 +592,12 @@ class AtlasArayuz(QMainWindow):
         lay.setContentsMargins(20, 0, 20, 0)
 
         self.durum_nokta = QLabel("●")
-        self.durum_nokta.setFont(QFont("Segoe UI", 9))
+        self.durum_nokta.setFont(QFont("Segoe UI", 8))
         self.durum_nokta.setStyleSheet(f"color:{C['green']}; background:transparent;")
         lay.addWidget(self.durum_nokta)
 
         self.durum_label = QLabel("Başlatılıyor...")
-        self.durum_label.setFont(QFont("Segoe UI", 9))
+        self.durum_label.setFont(QFont("Segoe UI", 8))
         self.durum_label.setStyleSheet(f"color:{C['dim']}; background:transparent;")
         lay.addWidget(self.durum_label)
 
@@ -556,7 +614,7 @@ class AtlasArayuz(QMainWindow):
         self.sinyaller.hata_goster.connect(self._hata_goster)
         self.sinyaller.surum_goster.connect(self._surum_goster)
         self.sinyaller.duygu_guncelle.connect(self._duygu_guncelle)
-        self.sinyaller.ses_seviyesi.connect(self._ses_seviyesi)
+        self.sinyaller.ses_seviyesi.connect(self._ses_seviyesi_slot)
 
     def _mesaj_ekle(self, rol, mesaj):
         zaman = datetime.now().strftime("%H:%M")
@@ -569,10 +627,11 @@ class AtlasArayuz(QMainWindow):
         else:
             renk, ikon, isim = C['text'], "•", rol.upper()
         html = (
-            f'<div style="margin:4px 0; font-family:Segoe UI,sans-serif;">'
+            f'<div style="margin:5px 0; font-family:Segoe UI,sans-serif;">'
             f'<span style="color:{C["dim"]}; font-size:9px; font-family:Consolas;">{zaman}</span>'
-            f'<span style="color:{renk}; font-weight:600;"> {ikon} {isim}</span>'
-            f'<span style="color:{C["text"]};"> {mesaj}</span></div>'
+            f'<span style="color:{renk}; font-weight:600;"> {ikon} {isim}</span><br/>'
+            f'<span style="color:{C["text"]}; margin-left:40px;"> {mesaj}</span>'
+            f'</div>'
         )
         self.konusma_alani.append(html)
         sb = self.konusma_alani.verticalScrollBar()
@@ -593,10 +652,10 @@ class AtlasArayuz(QMainWindow):
 
     def _mod_guncelle(self, mod):
         mod_str = {
-            "pasif": "🔇 Pasif Dinleme",
-            "aktif": "🎙️ Aktif Dinleme",
-            "isim": "👤 İsim Öğrenme",
-            "mesgul": "💭 İşleniyor...",
+            "pasif": "🔇 Pasif",
+            "aktif": "🎙️ Aktif",
+            "isim": "👤 İsim",
+            "mesgul": "💭 Meşgul",
         }
         self.dikkat_val.setText(f"  {mod_str.get(mod, mod)}")
         self.kure.set_mod(mod)
@@ -604,7 +663,7 @@ class AtlasArayuz(QMainWindow):
     def _bellek_guncelle(self, durum):
         toplam = durum.get("toplam_etkilesim", 0)
         calisma = durum.get("calisma_bellegi", 0)
-        self.hafiza_val.setText(f"  💬 {calisma}/7 | 📊 {toplam}")
+        self.hafiza_val.setText(f"  💬 {calisma}/7 | {toplam}")
 
     def _duygu_guncelle(self, duygu):
         emojiler = {
@@ -620,7 +679,7 @@ class AtlasArayuz(QMainWindow):
     def _surum_goster(self, surum):
         self.surum_label.setText(f"v{surum}")
 
-    def _ses_seviyesi(self, seviye):
+    def _ses_seviyesi_slot(self, seviye):
         self.kure.set_ses_seviyesi(seviye)
 
     def _saat_guncelle(self):
@@ -629,4 +688,6 @@ class AtlasArayuz(QMainWindow):
         gunler = {0:"Pzt",1:"Sal",2:"Çar",3:"Per",4:"Cum",5:"Cmt",6:"Paz"}
         aylar = {1:"Oca",2:"Şub",3:"Mar",4:"Nis",5:"May",6:"Haz",
                  7:"Tem",8:"Ağu",9:"Eyl",10:"Eki",11:"Kas",12:"Ara"}
-        self.tarih_label.setText(f"{gunler.get(simdi.weekday(),'')}  {simdi.day} {aylar.get(simdi.month,'')}")
+        self.tarih_label.setText(
+            f"{gunler.get(simdi.weekday(),'')}  {simdi.day} {aylar.get(simdi.month,'')}"
+        )
