@@ -233,23 +233,38 @@ def tum_pencereleri_kucult():
 
 def ses_ayarla(islem):
     """
-    Ses kontrolü.
+    Ses kontrolü — PowerShell ve pyautogui ile.
     islem: 'ac', 'kapat', 'yukselt', 'azalt'
     """
-    komutlar = {
-        "ac": "nircmd.exe mutesysvolume 0",
-        "kapat": "nircmd.exe mutesysvolume 1",
-        "yukselt": "nircmd.exe changesysvolume 5000",
-        "azalt": "nircmd.exe changesysvolume -5000",
-    }
-    komut = komutlar.get(islem)
-    if komut:
-        try:
-            subprocess.Popen(komut, shell=True)
-            return True, f"Ses {islem}"
-        except Exception as e:
-            return False, str(e)
-    return False, f"Bilinmeyen ses işlemi: {islem}"
+    try:
+        import pyautogui
+
+        if islem == "yukselt":
+            # 5 kere ses artır
+            for _ in range(5):
+                pyautogui.press("volumeup")
+            return True, "Ses yükseltildi"
+
+        elif islem == "azalt":
+            # 5 kere ses azalt
+            for _ in range(5):
+                pyautogui.press("volumedown")
+            return True, "Ses azaltıldı"
+
+        elif islem == "kapat":
+            pyautogui.press("volumemute")
+            return True, "Ses kapatıldı"
+
+        elif islem == "ac":
+            pyautogui.press("volumemute")  # Mute toggle
+            return True, "Ses açıldı"
+
+        return False, f"Bilinmeyen ses işlemi: {islem}"
+
+    except ImportError:
+        return False, "pyautogui kurulu değil"
+    except Exception as e:
+        return False, str(e)
 
 
 def bilgisayar_bilgisi():
