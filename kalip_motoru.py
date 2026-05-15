@@ -233,9 +233,8 @@ KALIPLAR = [
     ], "tetik"),
 
     # ──── GÜNCEL BİLGİ SORULARI ────
-    (r"(hava\s*(nasıl|durumu)|hava\s*kaç\s*derece)", [
-        "Hava durumu bilgisi için internet bağlantısı gerekiyor. Şu an yerel bilgim yok, ama araştırabilirim {ad}.",
-    ], "hava"),
+    # NOT: Hava durumu, haberler gibi bilgi gerektiren sorular Sistem 2 (AI) tarafından cevaplanır.
+    # Kalıp motorunda yakalamıyoruz çünkü Gemini daha iyi yanıt verebilir.
 
     (r"(kendine\s*iyi\s*bak|iyi\s*bak\s*kendine)", [
         "Sen de kendine iyi bak {ad}! Her zaman buradayım.",
