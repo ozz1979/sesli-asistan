@@ -331,6 +331,108 @@ KRİTİK KURALLAR:
                 sayac += 1
         return sayac >= 3
 
+    def baglanti_test(self):
+        """
+        Gemini AI bağlantısını derinlemesine test et.
+        Tüm olası hata senaryolarını kontrol eder.
+        """
+        sonuc = {
+            "basarili": False,
+            "api_key_var": bool(self._gemini_key),
+            "api_key_uzunluk": len(self._gemini_key) if self._gemini_key else 0,
+            "client_var": self._gemini_client is not None,
+            "model": self._gemini_model,
+            "hata": None,
+            "detay": None,
+            "cozum": None
+        }
+
+        # 1. API key kontrolü
+        if not self._gemini_key:
+            sonuc["hata"] = "Gemini API key boş"
+            sonuc["cozum"] = "config.json dosyasındaki 'gemini_api_key' alanına API anahtarınızı yapıştırın"
+            return sonuc
+
+        if len(self._gemini_key) < 20:
+            sonuc["hata"] = f"API key çok kısa ({len(self._gemini_key)} karakter)"
+            sonuc["cozum"] = "Geçerli bir Gemini API key girin (genellikle 39 karakter)"
+            return sonuc
+
+        # 2. google-generativeai paketi kontrolü
+        try:
+            import google.generativeai as genai
+        except ImportError:
+            sonuc["hata"] = "google-generativeai paketi kurulu değil"
+            sonuc["cozum"] = "Terminalde: pip install google-generativeai"
+            return sonuc
+
+        # 3. Client kontrolü
+        if not self._gemini_client:
+            sonuc["hata"] = "Gemini client oluşturulamadı"
+            sonuc["cozum"] = "API key'i kontrol edin ve uygulamayı yeniden başlatın"
+            return sonuc
+
+        # 4. İnternet bağlantısı kontrolü
+        try:
+            import urllib.request
+            urllib.request.urlopen("https://generativelanguage.googleapis.com", timeout=5)
+        except Exception as e:
+            hata_tur = type(e).__name__
+            sonuc["hata"] = f"Google API'ye erişilemiyor ({hata_tur})"
+            sonuc["detay"] = str(e)[:200]
+            if "getaddrinfo" in str(e).lower() or "name" in str(e).lower():
+                sonuc["cozum"] = "DNS sorunu — internet bağlantınızı kontrol edin"
+            elif "timeout" in str(e).lower():
+                sonuc["cozum"] = "Bağlantı zaman aşımı — firewall veya proxy sorunu olabilir"
+            elif "certificate" in str(e).lower() or "ssl" in str(e).lower():
+                sonuc["cozum"] = "SSL sertifika hatası — antivirüs yazılımınız bağlantıyı engelliyor olabilir"
+            else:
+                sonuc["cozum"] = "İnternet bağlantınızı ve firewall ayarlarınızı kontrol edin"
+            return sonuc
+
+        # 5. Gerçek API testi
+        try:
+            response = self._gemini_client.generate_content(
+                "Sadece 'Bağlantı başarılı' yaz, başka bir şey yazma.",
+                request_options={"timeout": 10}
+            )
+            if response and response.text:
+                sonuc["basarili"] = True
+                sonuc["yanit"] = response.text.strip()[:50]
+                return sonuc
+            else:
+                sonuc["hata"] = "Gemini boş yanıt döndürdü"
+                sonuc["cozum"] = "Farklı bir model deneyin veya biraz bekleyin"
+                return sonuc
+
+        except Exception as e:
+            hata_str = str(e)
+            if "401" in hata_str or "UNAUTHENTICATED" in hata_str.upper():
+                sonuc["hata"] = "API key geçersiz (401 Unauthorized)"
+                sonuc["cozum"] = "https://aistudio.google.com/apikey adresinden yeni key alın"
+            elif "403" in hata_str or "PERMISSION_DENIED" in hata_str.upper():
+                sonuc["hata"] = "API key bu modele erişim izni yok (403)"
+                sonuc["cozum"] = "API key'inizin Gemini API erişimine sahip olduğundan emin olun"
+            elif "429" in hata_str or "RESOURCE_EXHAUSTED" in hata_str.upper():
+                sonuc["hata"] = "API kotası dolmuş (429 Rate Limit)"
+                sonuc["cozum"] = "Biraz bekleyin veya API konsolundan kota sınırını kontrol edin"
+            elif "404" in hata_str:
+                sonuc["hata"] = f"Model bulunamadı: {self._gemini_model}"
+                sonuc["cozum"] = "config.json'da 'gemini_model' değerini 'gemini-2.0-flash' olarak değiştirin"
+            elif "timeout" in hata_str.lower():
+                sonuc["hata"] = "Bağlantı zaman aşımı"
+                sonuc["cozum"] = "İnternet hızınızı kontrol edin, VPN varsa kapatmayı deneyin"
+            elif "ssl" in hata_str.lower() or "certificate" in hata_str.lower():
+                sonuc["hata"] = "SSL sertifika hatası"
+                sonuc["cozum"] = "Antivirüs yazılımınız HTTPS trafiğini tarıyor olabilir — geçici olarak devre dışı bırakın"
+            else:
+                sonuc["hata"] = f"Beklenmeyen hata: {type(e).__name__}"
+                sonuc["detay"] = hata_str[:200]
+                sonuc["cozum"] = "atlas.log dosyasını kontrol edin"
+
+            logger.error(f"Gemini bağlantı testi başarısız: {hata_str}")
+            return sonuc
+
     def api_key_guncelle(self, yeni_key):
         """API key güncelle ve client'ı yeniden oluştur"""
         self._gemini_key = yeni_key
