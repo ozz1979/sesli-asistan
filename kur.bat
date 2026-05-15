@@ -37,6 +37,9 @@ echo.
 
 venv\Scripts\python.exe -m pip install --upgrade pip >nul 2>&1
 
+echo   Eski Gemini paketi kaldirilıyor...
+venv\Scripts\python.exe -m pip uninstall google-generativeai -y >nul 2>&1
+
 echo   PyQt6 yukleniyor...
 venv\Scripts\python.exe -m pip install PyQt6>=6.6.0 >nul 2>&1
 if errorlevel 1 echo   UYARI: PyQt6 yuklenemedi!
@@ -57,9 +60,9 @@ echo   pygame-ce yukleniyor...
 venv\Scripts\python.exe -m pip install pygame-ce>=2.4.0 >nul 2>&1
 if errorlevel 1 echo   UYARI: pygame-ce yuklenemedi!
 
-echo   google-generativeai yukleniyor...
-venv\Scripts\python.exe -m pip install google-generativeai>=0.5.0 >nul 2>&1
-if errorlevel 1 echo   UYARI: google-generativeai yuklenemedi!
+echo   google-genai (YENI SDK) yukleniyor...
+venv\Scripts\python.exe -m pip install google-genai>=1.0.0 >nul 2>&1
+if errorlevel 1 echo   UYARI: google-genai yuklenemedi!
 
 echo   numpy yukleniyor...
 venv\Scripts\python.exe -m pip install numpy>=1.26.0 >nul 2>&1
