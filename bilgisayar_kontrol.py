@@ -270,57 +270,44 @@ def ses_ayarla(islem):
 def tum_programlari_kapat():
     """
     Tüm açık kullanıcı pencerelerini kapatır.
-    ATLAS'ı (kendi PID + python), explorer shell'i ve sistem süreçlerini KORUR.
+    GÜVENLİK: ATLAS, explorer ve sistem süreçlerini KORUR.
+    Yöntem: taskkill ile bilinen kullanıcı programlarını kapatır.
     """
     try:
-        atlas_pid = os.getpid()
+        # Bilinen kullanıcı programları — sadece bunları kapat
+        kullanici_programlari = [
+            "chrome", "msedge", "firefox", "opera", "brave",
+            "notepad", "wordpad", "mspaint",
+            "WINWORD", "EXCEL", "POWERPNT", "OUTLOOK", "ONENOTE",
+            "vlc", "wmplayer", "Spotify",
+            "Discord", "Telegram", "WhatsApp", "Teams",
+            "Code", "devenv",
+            "GIMP", "Photoshop",
+            "Steam", "EpicGamesLauncher",
+            "Acrobat", "AcroRd32", "FoxitReader",
+            "WinRAR", "7zFM",
+        ]
 
-        # PowerShell: Sadece kullanıcı programlarını kapat
-        # 1. Kendi PID'imizi ve parent PID'imizi koru
-        # 2. explorer.exe'yi asla kapatma (Windows shell çöker)
-        # 3. Tüm python süreçlerini koru (ATLAS)
-        # 4. Sistem süreçlerini koru
-        ps_script = f"""
-$atlasPid = {atlas_pid}
-$sistemSurecler = @(
-    'explorer','python','python3','pythonw',
-    'cmd','powershell','pwsh','conhost','WindowsTerminal',
-    'dwm','csrss','smss','winlogon','wininit',
-    'services','lsass','lsaiso','svchost',
-    'RuntimeBroker','SearchHost','SearchUI',
-    'StartMenuExperienceHost','ShellExperienceHost',
-    'TextInputHost','SystemSettings','SettingsHelper',
-    'ctfmon','taskhostw','sihost','fontdrvhost',
-    'WmiPrvSE','dllhost','SecurityHealthSystray',
-    'OneDrive','PhoneExperienceHost','WidgetService',
-    'LockApp','LogiOverlay','CompPkgSrv'
-)
-$pencereli = Get-Process | Where-Object {{
-    $_.MainWindowHandle -ne 0 -and
-    $_.MainWindowTitle -ne '' -and
-    $_.Id -ne $atlasPid -and
-    $sistemSurecler -notcontains $_.Name
-}}
-$kapatilan = @()
-foreach ($p in $pencereli) {{
-    try {{
-        $null = $p.CloseMainWindow()
-        $kapatilan += $p.Name
-    }} catch {{}}
-}}
-$kapatilan -join ','
-"""
-        r = subprocess.run(
-            ["powershell", "-Command", ps_script],
-            capture_output=True, text=True, timeout=10
-        )
-        kapatilan = r.stdout.strip()
+        kapatilan = []
+        for prog in kullanici_programlari:
+            # Programın çalışıp çalışmadığını kontrol et
+            check = subprocess.run(
+                ["tasklist", "/FI", f"IMAGENAME eq {prog}.exe", "/NH"],
+                capture_output=True, text=True, timeout=3
+            )
+            if prog.lower() in check.stdout.lower() and "no tasks" not in check.stdout.lower():
+                # Çalışıyor → kapat (nazikçe)
+                subprocess.run(
+                    ["taskkill", "/IM", f"{prog}.exe", "/F"],
+                    capture_output=True, timeout=5
+                )
+                kapatilan.append(prog)
+
         if kapatilan:
-            liste = [x.strip() for x in kapatilan.split(",") if x.strip()]
-            logger.info(f"Tüm programlar kapatıldı: {liste}")
-            return True, f"{len(liste)} program kapatıldı"
+            logger.info(f"Programlar kapatıldı: {kapatilan}")
+            return True, f"{len(kapatilan)} program kapatıldı ({', '.join(kapatilan)})"
         else:
-            return True, "Açık program bulunamadı"
+            return True, "Kapatılacak açık program bulunamadı"
     except Exception as e:
         logger.error(f"Tüm programları kapatma hatası: {e}")
         return False, str(e)
