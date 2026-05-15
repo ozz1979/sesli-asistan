@@ -8,7 +8,7 @@ import json
 import traceback
 
 print("=" * 60)
-print("  ATLAS — Gemini AI Bağlantı Teşhis Aracı")
+print("  ATLAS — Gemini AI Bağlantı Teşhis Aracı v2")
 print("=" * 60)
 print()
 
@@ -37,188 +37,187 @@ try:
 
     if api_key:
         masked = api_key[:6] + "..." + api_key[-4:] if len(api_key) > 10 else "***"
-        print(f"  ✅ API Key: {masked} ({len(api_key)} karakter)")
+        print(f"  API Key: {masked} ({len(api_key)} karakter)")
     else:
-        print("  ❌ API Key: BOŞ!")
-        hatalar.append("API key config.json'da boş")
+        print("  API Key: BOS!")
+        hatalar.append("API key config.json'da bos")
     print(f"  Model: {model}")
     print(f"  Yedek: {yedek_model}")
-    print(f"  Timeout: {timeout}s")
 except FileNotFoundError:
-    print("  ❌ config.json bulunamadı!")
+    print("  config.json bulunamadi!")
     hatalar.append("config.json yok")
 except json.JSONDecodeError as e:
-    print(f"  ❌ config.json geçersiz JSON!")
-    print(f"     Hata satırı: {e.lineno}, kolon: {e.colno}")
-    print(f"     Hata: {e.msg}")
-    hatalar.append(f"config.json JSON hatası: satır {e.lineno}")
-except Exception as e:
-    print(f"  ❌ Hata: {e}")
-    hatalar.append(str(e))
+    print(f"  config.json gecersiz JSON! Satir: {e.lineno}")
+    hatalar.append(f"config.json JSON hatasi")
 print()
 
 # ──────── 3. Paket kontrolü ────────
-print("[3/7] google-generativeai paketi kontrol ediliyor...")
+print("[3/7] Gemini paketi kontrol ediliyor...")
+yeni_sdk = False
+eski_sdk = False
 genai = None
+
+# Önce yeni SDK dene
 try:
-    import google.generativeai as genai
+    from google import genai
+    yeni_sdk = True
+    print(f"  YENI SDK yuklu: google-genai")
     try:
-        ver = genai.__version__
+        print(f"  Surum: {genai.__version__}")
     except:
-        ver = "bilinmiyor"
-    print(f"  ✅ Paket yüklü: google-generativeai v{ver}")
-except ImportError as e:
-    print(f"  ❌ Paket bulunamadı: {e}")
-    print()
-    print("  Çözüm: Komut satırında şunu çalıştırın:")
-    print("  pip install google-generativeai")
-    hatalar.append("google-generativeai paketi yok")
-print()
+        pass
+except ImportError:
+    pass
 
-# ──────── 4. Alt bağımlılıklar ────────
-print("[4/7] Alt bağımlılıklar kontrol ediliyor...")
-for pkg, isim in [("google.api_core", "google-api-core"), ("google.protobuf", "protobuf"), ("grpc", "grpcio")]:
+# Yeni yoksa eski SDK kontrol
+if not yeni_sdk:
     try:
-        __import__(pkg)
-        print(f"  ✅ {isim}")
+        import google.generativeai as genai_eski
+        eski_sdk = True
+        print(f"  ESKI SDK yuklu: google-generativeai v{getattr(genai_eski, '__version__', '?')}")
+        print("  UYARI: Bu paket artik desteklenmiyor!")
+        print("  Cozum: pip install google-genai")
+        hatalar.append("Eski SDK kullaniliyor (google-generativeai)")
     except ImportError:
-        print(f"  ⚠️ {isim} — eksik olabilir")
+        print("  HATA: Hicbir Gemini paketi kurulu degil!")
+        print("  Cozum: pip install google-genai")
+        hatalar.append("Gemini paketi yok")
 print()
 
-# ──────── 5. İnternet bağlantısı ────────
-print("[5/7] İnternet bağlantısı test ediliyor...")
+# ──────── 4. İnternet bağlantısı ────────
+print("[4/7] Internet baglantisi test ediliyor...")
 internet_ok = False
 try:
     import urllib.request
-    # Google genel
     urllib.request.urlopen("https://www.google.com", timeout=10)
-    print("  ✅ İnternet bağlantısı var (google.com)")
+    print("  Internet baglantisi var")
     internet_ok = True
 except Exception as e:
-    print(f"  ❌ İnternet bağlantısı yok: {e}")
-    hatalar.append("İnternet bağlantısı yok")
-
-if internet_ok:
-    try:
-        r = urllib.request.urlopen("https://generativelanguage.googleapis.com", timeout=10)
-        print(f"  ✅ Gemini API erişilebilir (HTTP {r.status})")
-    except Exception as e:
-        tur = type(e).__name__
-        print(f"  ❌ Gemini API erişilemez ({tur}): {e}")
-        hatalar.append(f"Gemini API erişilemez: {tur}")
+    print(f"  Internet baglantisi yok: {e}")
+    hatalar.append("Internet baglantisi yok")
 print()
 
-# ──────── 6. Client oluşturma ────────
-print("[6/7] Gemini client oluşturuluyor...")
+# ──────── 5. Client oluşturma ────────
+print("[5/7] Gemini client olusturuluyor...")
 client = None
-if not genai:
-    print("  ⏭️ Atlandı (paket yok)")
-elif not api_key:
-    print("  ⏭️ Atlandı (API key yok)")
-else:
-    # İlk deneme: system_instruction ile
+
+if not api_key:
+    print("  Atlandi (API key yok)")
+elif yeni_sdk:
     try:
-        genai.configure(api_key=api_key)
-        client = genai.GenerativeModel(
-            model,
-            generation_config={
-                "max_output_tokens": 100,
-                "temperature": 0.7,
-            },
-            system_instruction="Sen ATLAS adında bir Türkçe sesli asistansın."
-        )
-        print(f"  ✅ Client oluşturuldu (system_instruction ile)")
-    except TypeError as e:
-        # Eski sürüm — system_instruction desteklemiyor
-        print(f"  ⚠️ system_instruction desteklenmiyor: {e}")
-        print("  → system_instruction olmadan deneniyor...")
-        try:
-            client = genai.GenerativeModel(
-                model,
-                generation_config={
-                    "max_output_tokens": 100,
-                    "temperature": 0.7,
-                }
-            )
-            print(f"  ✅ Client oluşturuldu (system_instruction olmadan)")
-            hatalar.append("system_instruction DESTEKLENMIYOR — paket eski sürüm")
-        except Exception as e2:
-            print(f"  ❌ Client oluşturulamadı: {e2}")
-            hatalar.append(f"Client oluşturulamadı: {e2}")
+        client = genai.Client(api_key=api_key)
+        print(f"  Client olusturuldu (yeni SDK)")
     except Exception as e:
-        print(f"  ❌ Client oluşturma hatası: {type(e).__name__}: {e}")
-        hatalar.append(f"Client hatası: {e}")
+        print(f"  Client olusturma hatasi: {e}")
+        hatalar.append(f"Client hatasi: {e}")
+elif eski_sdk:
+    try:
+        genai_eski.configure(api_key=api_key)
+        client = genai_eski.GenerativeModel(model)
+        print(f"  Client olusturuldu (eski SDK)")
+    except Exception as e:
+        print(f"  Client olusturma hatasi: {e}")
+        hatalar.append(f"Client hatasi: {e}")
+else:
+    print("  Atlandi (paket yok)")
 print()
 
-# ──────── 7. Test mesajı ────────
-print("[7/7] Gemini'ye test mesajı gönderiliyor...")
+# ──────── 6. Test mesajı ────────
+print("[6/7] Gemini'ye test mesaji gonderiliyor...")
 if not client:
-    print("  ⏭️ Atlandı (client yok)")
+    print("  Atlandi (client yok)")
 else:
-    # Deneme 1: request_options ile
     try:
-        response = client.generate_content(
-            "Sadece 'Bağlantı başarılı' yaz, başka bir şey yazma.",
-            request_options={"timeout": 15}
-        )
-        if response and response.text:
-            print(f"  ✅ Gemini yanıt verdi: '{response.text.strip()[:80]}'")
-            print()
-            print("  🎉 TÜM TESTLER BAŞARILI — Gemini bağlantısı çalışıyor!")
-        else:
-            print("  ❌ Gemini boş yanıt döndü")
-            hatalar.append("Gemini boş yanıt")
-    except TypeError as te:
-        # request_options desteklenmiyor olabilir
-        print(f"  ⚠️ request_options hatası: {te}")
-        print("  → request_options olmadan deneniyor...")
-        try:
-            response = client.generate_content(
-                "Sadece 'Bağlantı başarılı' yaz, başka bir şey yazma."
+        if yeni_sdk:
+            from google.genai import types
+            response = client.models.generate_content(
+                model=model,
+                contents="Sadece 'Baglanti basarili' yaz, baska bir sey yazma.",
+                config=types.GenerateContentConfig(
+                    max_output_tokens=20,
+                    temperature=0.1,
+                )
             )
-            if response and response.text:
-                print(f"  ✅ Gemini yanıt verdi: '{response.text.strip()[:80]}'")
-                hatalar.append("request_options DESTEKLENMIYOR — paket eski sürüm")
-            else:
-                print("  ❌ Gemini boş yanıt döndü")
-                hatalar.append("Gemini boş yanıt")
-        except Exception as e2:
-            print(f"  ❌ Hata: {type(e2).__name__}: {e2}")
-            hatalar.append(str(e2))
+        else:
+            response = client.generate_content(
+                "Sadece 'Baglanti basarili' yaz, baska bir sey yazma."
+            )
+
+        if response and response.text:
+            print(f"  Gemini yanit verdi: '{response.text.strip()[:80]}'")
+            print()
+            print("  TUM TESTLER BASARILI - Gemini baglantisi calisiyor!")
+        else:
+            print("  Gemini bos yanit dondurdu")
+            hatalar.append("Gemini bos yanit")
+
     except Exception as e:
         hata_str = str(e)
         tur = type(e).__name__
-        print(f"  ❌ {tur}: {hata_str[:200]}")
+        print(f"  HATA {tur}: {hata_str[:200]}")
 
         if "401" in hata_str or "UNAUTHENTICATED" in hata_str.upper():
-            print("  💡 API key geçersiz! Yeni key alın: https://aistudio.google.com/apikey")
-            hatalar.append("API key geçersiz (401)")
+            print("  >> API key gecersiz! Yeni key alin: https://aistudio.google.com/apikey")
+            hatalar.append("API key gecersiz (401)")
         elif "403" in hata_str or "PERMISSION" in hata_str.upper():
-            print("  💡 API key'in izni yok! Google AI Studio'dan kontrol edin")
-            hatalar.append("API key izin hatası (403)")
+            print("  >> API key izni yok!")
+            hatalar.append("API key izin hatasi (403)")
         elif "429" in hata_str or "EXHAUSTED" in hata_str.upper():
-            print("  💡 API kotası dolmuş! Biraz bekleyin veya kota sınırını kontrol edin")
-            hatalar.append("API kota dolmuş (429)")
+            print("  >> API kotasi dolmus! Bekleyin veya yeni API key olusturun")
+            print("  >> Yeni key: https://aistudio.google.com/apikey")
+            hatalar.append("API kota dolmus (429)")
         elif "404" in hata_str:
-            print(f"  💡 Model bulunamadı: {model}")
-            hatalar.append(f"Model bulunamadı: {model}")
-        elif "ssl" in hata_str.lower() or "certificate" in hata_str.lower():
-            print("  💡 SSL hatası — antivirüs veya proxy sorunu olabilir")
-            hatalar.append("SSL sertifika hatası")
+            print(f"  >> Model bulunamadi: {model}")
+            hatalar.append(f"Model bulunamadi: {model}")
         else:
             hatalar.append(f"{tur}: {hata_str[:100]}")
-            print()
-            print("  Detaylı hata:")
             traceback.print_exc()
-
 print()
+
+# ──────── 7. Yedek model test ────────
+if hatalar and any("429" in h for h in hatalar):
+    print("[7/7] Yedek model deneniyor...")
+    yedek = config.get("ai", {}).get("gemini_yedek_model", "gemini-1.5-flash")
+    try:
+        if yeni_sdk:
+            from google.genai import types
+            response = client.models.generate_content(
+                model=yedek,
+                contents="Sadece 'Yedek basarili' yaz.",
+                config=types.GenerateContentConfig(max_output_tokens=20)
+            )
+        else:
+            yedek_client = genai_eski.GenerativeModel(yedek)
+            response = yedek_client.generate_content("Sadece 'Yedek basarili' yaz.")
+
+        if response and response.text:
+            print(f"  Yedek model ({yedek}) calisiyor: '{response.text.strip()[:50]}'")
+        else:
+            print(f"  Yedek model de bos yanit")
+    except Exception as e:
+        print(f"  Yedek model de basarisiz: {type(e).__name__}: {str(e)[:100]}")
+    print()
+else:
+    print("[7/7] Yedek model testi - Atlandi (gerek yok)")
+    print()
+
 print("=" * 60)
 if hatalar:
     print(f"  BULUNAN SORUNLAR ({len(hatalar)}):")
     for i, h in enumerate(hatalar, 1):
         print(f"  {i}. {h}")
+    print()
+    if any("429" in h or "kota" in h for h in hatalar):
+        print("  COZUM: API kotasi dolmus.")
+        print("  1. https://aistudio.google.com/apikey adresine gidin")
+        print("  2. 'Create API Key' ile YENI bir key olusturun")
+        print("  3. config.json'daki gemini_api_key'i yeni key ile degistirin")
+        print("  4. ATLAS'i yeniden baslatin")
+    if any("paket" in h.lower() or "sdk" in h.lower() for h in hatalar):
+        print("  COZUM: Komut satirinda su komutu calistirin:")
+        print("  venv\\Scripts\\pip.exe install google-genai")
 else:
-    print("  ✅ Tüm testler başarılı!")
+    print("  TUM TESTLER BASARILI!")
 print("=" * 60)
 print()
-input("Kapatmak için Enter'a basın...")
+input("Kapatmak icin Enter'a basin...")
