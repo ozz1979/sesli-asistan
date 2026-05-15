@@ -467,17 +467,59 @@ class KalipMotoru:
                     elif eylem_kapat:
                         return self._program_kapat(program_adi, ad)
 
-        # ── 8. Tek kelime "kapat" → aktif pencereyi kapat ──
+        # ── 8. Tüm programları kapat ──
+        tum_kapat_kaliplari = [
+            "açık programları kapat", "acik programlari kapat",
+            "açık programları kapa", "acik programlari kapa",
+            "tüm programları kapat", "tum programlari kapat",
+            "programları kapat", "programlari kapat",
+            "hepsini kapat", "hep kapat",
+            "her şeyi kapat", "herseyi kapat", "herşeyi kapat",
+        ]
+        if any(k in metin or turkce_normalize(k) in metin_norm for k in tum_kapat_kaliplari):
+            basarili, sonuc = bk.tum_programlari_kapat()
+            if basarili:
+                return f"Açık programlar kapatılıyor {ad}. {sonuc}.", "tum_kapat", 0.95
+            else:
+                return f"Programları kapatırken sorun oluştu {ad}.", "hata", 0.9
+
+        # ── 9. Tek kelime "kapat" → aktif pencereyi kapat ──
         if metin.strip() in ("kapat", "kapa", "pencereyi kapat", "bunu kapat"):
             bk.pencere_kapat()
             return f"Pencere kapatıldı {ad}.", "pencere_kapat", 0.95
 
-        # ── 10. Bilgisayarı kapat / yeniden başlat ──
-        if "bilgisayar" in metin or "bilgisayari" in metin_norm:
+        # ── 10. Bilgisayarı kapat / yeniden başlat / uyut / iptal ──
+        if "bilgisayar" in metin or "bilgisayari" in metin_norm or "bilgisayarı" in metin:
+            # Kapatma iptal
+            if "iptal" in metin:
+                bk.kapatma_iptal()
+                return f"Kapatma işlemi iptal edildi {ad}.", "kapatma_iptal", 0.95
+
+            # Yeniden başlat
+            if "yeniden" in metin and ("başlat" in metin or "baslat" in metin_norm):
+                basarili, sonuc = bk.bilgisayari_yeniden_baslat(30)
+                if basarili:
+                    return f"Bilgisayar 30 saniye sonra yeniden başlayacak {ad}. İptal etmek istersen 'iptal et' de.", "yeniden_baslat", 0.95
+                return f"Yeniden başlatma başarısız oldu {ad}.", "hata", 0.9
+
+            # Uyku modu
+            if "uyut" in metin or "uyku" in metin:
+                basarili, sonuc = bk.uyku_modu()
+                if basarili:
+                    return f"Bilgisayar uyku moduna geçiyor {ad}.", "uyku", 0.95
+                return f"Uyku modu hatası {ad}.", "hata", 0.9
+
+            # Kapat
             if any(f in metin for f in KAPAT_FIILLERI):
-                return f"Bilgisayarı kapatma komutunu güvenlik nedeniyle sesli olarak çalıştırmıyorum {ad}. Bunu manuel yapmanı öneririm.", "guvenlik", 0.95
-            if "yeniden" in metin and ("başlat" in metin or "baslat" in metin):
-                return f"Bilgisayarı yeniden başlatma komutunu güvenlik nedeniyle çalıştırmıyorum {ad}.", "guvenlik", 0.95
+                basarili, sonuc = bk.bilgisayari_kapat(30)
+                if basarili:
+                    return f"Bilgisayar 30 saniye sonra kapanacak {ad}. İptal etmek istersen 'iptal et' de.", "bilgisayar_kapat", 0.95
+                return f"Kapatma başarısız oldu {ad}.", "hata", 0.9
+
+        # ── 10b. Kapatma iptal (bilgisayar kelimesi olmadan) ──
+        if "iptal" in metin and ("kapat" in metin or "kapatma" in metin):
+            bk.kapatma_iptal()
+            return f"Kapatma işlemi iptal edildi {ad}.", "kapatma_iptal", 0.95
 
         # ── 11. Kısayollar ──
         if "kaydet" in metin and ("dosya" in metin or "belge" in metin):
