@@ -1,5 +1,5 @@
 """
-Hafiza Modulu v7.2
+Hafiza Modulu v7.3
 - Kullanici tanima (isim kayit)
 - Tercihler, rutinler ve ogrenme
 - Yapilandirilmis hafiza ozeti (AI context icin optimize)
@@ -20,7 +20,7 @@ class Hafiza:
             try:
                 with open(self.dosya, "r", encoding="utf-8") as f:
                     veri = json.load(f)
-                    # v7.2 alanlari yoksa ekle
+                    # v7.3 alanlari yoksa ekle
                     if "kullanici" not in veri:
                         veri["kullanici"] = {"adi": "", "ilk_kullanim": ""}
                     return veri
