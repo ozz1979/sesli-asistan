@@ -1,5 +1,5 @@
 """
-JARVIS Tarzi Arayuz v7.1
+JARVIS Tarzi Arayuz v7.2
 - 3 Katmanli Akilli Mimari
 - Kullanici tanima (ilk acilista isim sorar)
 - Baslangic kontrolleri ayri thread'de (GUI donmuyor)
@@ -280,7 +280,7 @@ class BaslangicThread(QThread):
                 self.ilerleme.emit("Ilk kullanim - adiniz sorulacak")
                 self.asistan.isim_bekleniyor = True
 
-            self.tamamlandi.emit(True, "Tum kontroller basarili! (v7.1)")
+            self.tamamlandi.emit(True, "Tum kontroller basarili! (v7.2)")
 
         except Exception as e:
             self.tamamlandi.emit(False, f"Hata: {str(e)}")
@@ -584,7 +584,7 @@ class JarvisPencere(QMainWindow):
         ana_layout.addWidget(self.panel)
 
         # Baslangic
-        self.log.log_ekle("Sesli AI Asistan v7.1 baslatildi", "sistem")
+        self.log.log_ekle("Sesli AI Asistan v7.2 baslatildi", "sistem")
         self.log.log_ekle("Sistem kontrolleri yapiliyor...", "soluk")
         self.daire.durum_ayarla("yukleniyor")
 
