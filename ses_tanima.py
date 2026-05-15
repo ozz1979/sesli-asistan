@@ -1,11 +1,11 @@
 """
-Ses Tanima Modulu v5.1
-- Google Speech Recognition (birincil - ucretsiz)
+Ses Tanima Modulu v7.5
+- Google Speech Recognition (birincil - ucretsiz, Turkce)
 - Whisper (yedek - internet yoksa)
-- HIZLI sessizlik algilama (1.0sn)
-- Non-blocking InputStream + pre-buffer
+- Gelistirilmis Turkce ses algilama
+- Daha hassas mikrofon kalibrasyonu
+- STT sonrasi Turkce duzeltme
 - Thread-safe durdurma
-- Zaman olcumu
 """
 import numpy as np
 import sounddevice as sd
@@ -16,6 +16,7 @@ import time
 import threading
 import queue
 from collections import deque
+from turkce import stt_duzelt, turkce_normalize
 
 
 class SesTanima:
@@ -26,8 +27,8 @@ class SesTanima:
         self.dil = config.get("whisper_dil", "tr")
         self.ornekleme_hizi = config.get("ornekleme_hizi", 16000)
         self.ses_esik = config.get("ses_esik", 0.008)
-        self.sessizlik_suresi = config.get("sessizlik_suresi", 1.0)  # 2.0 -> 1.0
-        self.min_kayit = config.get("min_kayit_suresi", 0.3)  # 0.5 -> 0.3
+        self.sessizlik_suresi = config.get("sessizlik_suresi", 1.0)
+        self.min_kayit = config.get("min_kayit_suresi", 0.3)
         self.maks_kayit = config.get("maks_kayit_suresi", 15.0)
         self.cihaz_indeksi = config.get("mikrofon_indeksi", None)
         self._aktif = True
@@ -62,10 +63,11 @@ class SesTanima:
     def _kalibre_et(self):
         if self._kalibrasyon_yapildi:
             return
-        print("[*] Ortam gurultusu olculuyor (1.5 sn sessiz kalin)...")
+        print("[*] Ortam gurultusu olculuyor (2 sn sessiz kalin)...")
         try:
+            # Daha uzun kalibrasyon (1.5 -> 2.0sn) daha dogru sonuc verir
             olcum = sd.rec(
-                int(1.5 * self.ornekleme_hizi),
+                int(2.0 * self.ornekleme_hizi),
                 samplerate=self.ornekleme_hizi,
                 channels=1,
                 dtype='float32',
@@ -73,10 +75,19 @@ class SesTanima:
             )
             sd.wait()
             self._ortam_gurultusu = float(np.sqrt(np.mean(olcum ** 2)))
-            yeni_esik = max(self._ortam_gurultusu * 2.5, 0.003)
-            if yeni_esik > self.ses_esik:
+
+            # Daha hassas esik: ortam x 2.0 (onceki 2.5 cok yuksekti)
+            # Minimum esik: 0.002 (onceki 0.003 bazi mikrolarda cok yuksek)
+            yeni_esik = max(self._ortam_gurultusu * 2.0, 0.002)
+
+            # Maksimum sinir - cok yuksek esik olmamali
+            yeni_esik = min(yeni_esik, 0.05)
+
+            if yeni_esik != self.ses_esik:
                 self.ses_esik = yeni_esik
-            print(f"   Ortam: {self._ortam_gurultusu:.5f}, Esik: {self.ses_esik:.5f}")
+
+            print(f"   Ortam gurultusu: {self._ortam_gurultusu:.5f}")
+            print(f"   Ses algilama esigi: {self.ses_esik:.5f}")
             self._kalibrasyon_yapildi = True
         except Exception as e:
             print(f"[!] Kalibrasyon hatasi: {e}")
@@ -91,7 +102,7 @@ class SesTanima:
                 return None
 
         ses_kuyrugu = queue.Queue()
-        parca_suresi = 0.2  # 0.3 -> 0.2 (daha hassas algilama)
+        parca_suresi = 0.15  # 0.2 -> 0.15 (daha hassas algilama)
         parca_boyutu = int(parca_suresi * self.ornekleme_hizi)
 
         def ses_callback(indata, frames, time_info, status):
@@ -101,7 +112,7 @@ class SesTanima:
         parcalar = []
         sessiz_sure = 0
         toplam_sure = 0
-        on_tampon = deque(maxlen=3)  # 4 -> 3
+        on_tampon = deque(maxlen=5)  # 3 -> 5 (daha fazla on-tampon, kelimenin basini kacirmamak icin)
 
         try:
             stream = sd.InputStream(
@@ -124,8 +135,9 @@ class SesTanima:
 
                 if seviye > self.ses_esik:
                     if not ses_algilandi:
-                        print(f"[!] Ses algilandi! (seviye: {seviye:.5f})")
+                        print(f"[!] Ses algilandi! (seviye: {seviye:.5f}, esik: {self.ses_esik:.5f})")
                         ses_algilandi = True
+                        # On-tamponu ekle (kelimenin basini kacirmamak icin)
                         for eski_parca in on_tampon:
                             parcalar.append(eski_parca)
                             toplam_sure += parca_suresi
@@ -167,6 +179,12 @@ class SesTanima:
             stt_sure = time.time() - baslangic
             print(f"[*] STT suresi: {stt_sure:.1f}sn")
 
+            # Turkce STT duzeltmesi
+            duzeltilmis = stt_duzelt(metin)
+            if duzeltilmis != metin:
+                print(f"[TURKCE] STT duzeltme: '{metin}' -> '{duzeltilmis}'")
+                metin = duzeltilmis
+
         return metin
 
     def _metne_cevir(self, ses_verisi):
@@ -200,13 +218,24 @@ class SesTanima:
         return metin
 
     def _google_cevir(self, wav_yol):
-        """Google Speech Recognition - ucretsiz"""
+        """Google Speech Recognition - ucretsiz, Turkce optimize"""
         try:
             import speech_recognition as sr
             r = sr.Recognizer()
+
+            # Turkce icin optimize parametreler
+            r.energy_threshold = 200  # Daha dusuk esik = daha hassas
+            r.dynamic_energy_threshold = True  # Ortama adapte olsun
+            r.dynamic_energy_adjustment_damping = 0.15
+            r.dynamic_energy_ratio = 1.5
+            r.pause_threshold = 0.8  # Daha kisa duraklama toleransi
+
             with sr.AudioFile(wav_yol) as kaynak:
+                # Gurultu ayarlama (0.3sn)
+                r.adjust_for_ambient_noise(kaynak, duration=0.3)
                 ses_verisi = r.record(kaynak)
 
+            # Turkce dil parametresi ile tanima
             metin = r.recognize_google(ses_verisi, language="tr-TR")
 
             if metin and metin.strip():
@@ -249,7 +278,7 @@ class SesTanima:
                     min_silence_duration_ms=500,
                     speech_pad_ms=400
                 ),
-                initial_prompt="Merhaba, ben bir sesli asistanım.",
+                initial_prompt="Merhaba, ben bir Turkce sesli asistanım. Kullanici Turkce konusuyor.",
                 condition_on_previous_text=False,
                 no_speech_threshold=0.6
             )
