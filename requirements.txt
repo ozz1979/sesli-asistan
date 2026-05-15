@@ -1,0 +1,10 @@
+numpy
+sounddevice
+scipy
+SpeechRecognition
+edge-tts
+pygame-ce
+PyQt6
+requests
+pyautogui
+pyttsx3
