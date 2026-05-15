@@ -1,790 +1,399 @@
 """
-JARVIS Tarzi Arayuz v7.6
-- 3 Katmanli Akilli Mimari
-- Kullanici tanima (ilk acilista isim sorar)
-- Baslangic kontrolleri ayri thread'de (GUI donmuyor)
-- Mikrofon otomatik baslar
-- Non-blocking mimari
+ATLAS - Arayüz
+===============
+ATLAS sesli asistan GUI — JARVIS tarzı modern arayüz.
+PyQt6 tabanlı, karanlık tema, beyin durumu göstergeleri.
 """
+
 import sys
-import math
+import threading
 import time
-from turkce import isim_temizle_ve_duzelt, turkce_baslik
+import logging
+from datetime import datetime
+
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QTextEdit, QFrame, QSystemTrayIcon, QMenu,
-    QGraphicsDropShadowEffect
+    QLabel, QTextEdit, QFrame, QGraphicsDropShadowEffect
 )
-from PyQt6.QtCore import (
-    Qt, QTimer, QThread, pyqtSignal, QSize, QPoint, QRectF
-)
-from PyQt6.QtGui import (
-    QFont, QColor, QPainter, QPen, QBrush, QLinearGradient,
-    QRadialGradient, QIcon, QPixmap, QPainterPath, QAction
-)
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QObject, QPropertyAnimation, QEasingCurve
+from PyQt6.QtGui import QFont, QColor, QPalette, QLinearGradient, QPainter, QFontDatabase
+
+logger = logging.getLogger("ATLAS.arayuz")
+
+# ============================================================
+# RENKLER
+# ============================================================
+
+RENKLER = {
+    "arkaplan": "#0a0a0f",
+    "panel": "#12121a",
+    "panel_border": "#1a1a2e",
+    "metin": "#e0e0e0",
+    "metin_soluk": "#888899",
+    "vurgu": "#00c8ff",
+    "vurgu_koyu": "#0088aa",
+    "basari": "#00ff88",
+    "uyari": "#ffaa00",
+    "hata": "#ff4444",
+    "kullanici": "#00c8ff",
+    "asistan": "#00ff88",
+}
 
 
-class Renkler:
-    ANA = QColor(0, 200, 255)
-    ANA_KOYU = QColor(0, 120, 180)
-    ANA_ACIK = QColor(100, 220, 255)
-    TURUNCU = QColor(255, 160, 0)
-    YESIL = QColor(0, 255, 120)
-    KIRMIZI = QColor(255, 60, 60)
-    ARKAPLAN = QColor(10, 12, 20)
-    PANEL = QColor(15, 20, 35)
-    METIN = QColor(200, 220, 240)
-    METIN_SOLUK = QColor(80, 100, 130)
+# ============================================================
+# SİNYAL KÖPRÜSÜn(Thread → GUI iletişimi)
+# ============================================================
+
+class GuiSinyalleri(QObject):
+    """Thread-safe GUI güncellemeleri için sinyal köprüsü"""
+    mesaj_ekle = pyqtSignal(str, str)       # (rol, mesaj)
+    durum_guncelle = pyqtSignal(str)         # durum metni
+    mod_guncelle = pyqtSignal(str)           # dikkat modu
+    bellek_guncelle = pyqtSignal(dict)       # bellek durumu
+    hata_goster = pyqtSignal(str)            # hata mesajı
+    surum_goster = pyqtSignal(str)           # sürüm bilgisi
+    duygu_guncelle = pyqtSignal(str)         # duygu durumu
 
 
-class DalgaWidget(QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setMinimumHeight(80)
-        self.aktif = False
-        self.faz = 0.0
-        self.genlik = 0.0
-        self.hedef_genlik = 0.0
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self._guncelle)
-        self.timer.start(30)
+# ============================================================
+# ANA PENCERE
+# ============================================================
 
-    def dinlemeye_basla(self):
-        self.aktif = True
-        self.hedef_genlik = 1.0
+class AtlasArayuz(QMainWindow):
+    """ATLAS Ana Pencere — JARVIS tarzı arayüz"""
 
-    def dinlemeyi_durdur(self):
-        self.aktif = False
-        self.hedef_genlik = 0.0
-
-    def _guncelle(self):
-        self.faz += 0.08
-        if self.genlik < self.hedef_genlik:
-            self.genlik = min(self.genlik + 0.05, self.hedef_genlik)
-        elif self.genlik > self.hedef_genlik:
-            self.genlik = max(self.genlik - 0.03, self.hedef_genlik)
-        self.update()
-
-    def paintEvent(self, event):
-        if self.genlik < 0.01:
-            painter = QPainter(self)
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            pen = QPen(Renkler.ANA_KOYU, 1)
-            painter.setPen(pen)
-            y_merkez = self.height() // 2
-            painter.drawLine(0, y_merkez, self.width(), y_merkez)
-            painter.end()
-            return
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        w = self.width()
-        h = self.height()
-        y_merkez = h / 2
-        katmanlar = [
-            (Renkler.ANA, 2.5, 1.0, 0.0),
-            (Renkler.ANA_ACIK, 1.5, 0.6, 1.0),
-            (Renkler.ANA_KOYU, 1.0, 0.8, 2.0),
-        ]
-        for renk, kalinlik, genlik_carpan, faz_kayma in katmanlar:
-            renk_kopya = QColor(renk)
-            renk_kopya.setAlpha(int(180 * self.genlik))
-            pen = QPen(renk_kopya, kalinlik)
-            painter.setPen(pen)
-            path = QPainterPath()
-            ilk = True
-            for x in range(0, w + 1, 2):
-                t = x / w
-                dalga1 = math.sin(t * 4 * math.pi + self.faz + faz_kayma) * 0.5
-                dalga2 = math.sin(t * 7 * math.pi + self.faz * 1.3 + faz_kayma) * 0.3
-                dalga3 = math.sin(t * 11 * math.pi + self.faz * 0.7 + faz_kayma) * 0.2
-                dalga = (dalga1 + dalga2 + dalga3) * genlik_carpan * self.genlik
-                y = y_merkez + dalga * (h * 0.35)
-                if ilk:
-                    path.moveTo(x, y)
-                    ilk = False
-                else:
-                    path.lineTo(x, y)
-            painter.drawPath(path)
-        painter.end()
-
-
-class DaireGosterge(QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setFixedSize(160, 160)
-        self.durum = "bekliyor"
-        self.aci = 0
-        self.nabiz = 0.0
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self._animasyon)
-        self.timer.start(30)
-
-    def durum_ayarla(self, durum):
-        self.durum = durum
-
-    def _animasyon(self):
-        self.aci = (self.aci + 2) % 360
-        self.nabiz = (math.sin(time.time() * 3) + 1) / 2
-        self.update()
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        w = self.width()
-        h = self.height()
-        merkez_x = w / 2
-        merkez_y = h / 2
-        yaricap = min(w, h) / 2 - 10
-        renk_haritasi = {
-            "bekliyor": Renkler.ANA_KOYU,
-            "dinliyor": Renkler.ANA,
-            "isliyor": Renkler.TURUNCU,
-            "konusuyor": Renkler.YESIL,
-            "hata": Renkler.KIRMIZI,
-            "yukleniyor": Renkler.TURUNCU,
-        }
-        renk = renk_haritasi.get(self.durum, Renkler.ANA)
-        pen = QPen(QColor(renk.red(), renk.green(), renk.blue(), 60), 2)
-        painter.setPen(pen)
-        painter.drawEllipse(QRectF(merkez_x - yaricap, merkez_y - yaricap, yaricap * 2, yaricap * 2))
-        pen2 = QPen(renk, 3)
-        painter.setPen(pen2)
-        painter.drawArc(int(merkez_x - yaricap), int(merkez_y - yaricap), int(yaricap * 2), int(yaricap * 2), self.aci * 16, 90 * 16)
-        ic_yaricap = yaricap * 0.7
-        nabiz_r = ic_yaricap + self.nabiz * 5
-        gradient = QRadialGradient(merkez_x, merkez_y, nabiz_r)
-        gradient.setColorAt(0, QColor(renk.red(), renk.green(), renk.blue(), 30))
-        gradient.setColorAt(0.7, QColor(renk.red(), renk.green(), renk.blue(), 15))
-        gradient.setColorAt(1, QColor(0, 0, 0, 0))
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QBrush(gradient))
-        painter.drawEllipse(QRectF(merkez_x - nabiz_r, merkez_y - nabiz_r, nabiz_r * 2, nabiz_r * 2))
-        pen3 = QPen(QColor(renk.red(), renk.green(), renk.blue(), 120), 1.5)
-        painter.setPen(pen3)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawEllipse(QRectF(merkez_x - ic_yaricap, merkez_y - ic_yaricap, ic_yaricap * 2, ic_yaricap * 2))
-        durum_metinleri = {
-            "bekliyor": "HAZIR",
-            "dinliyor": "DINLIYOR",
-            "isliyor": "ISLIYOR",
-            "konusuyor": "KONUSUYOR",
-            "hata": "HATA",
-            "yukleniyor": "YUKLENIYOR",
-        }
-        metin = durum_metinleri.get(self.durum, "---")
-        font = QFont("Consolas", 11, QFont.Weight.Bold)
-        painter.setFont(font)
-        painter.setPen(renk)
-        painter.drawText(QRectF(0, 0, w, h), Qt.AlignmentFlag.AlignCenter, metin)
-        painter.end()
-
-
-class LogPaneli(QTextEdit):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setReadOnly(True)
-        self.setFont(QFont("Consolas", 10))
-        self.setStyleSheet("""
-            QTextEdit {
-                background-color: rgba(10, 15, 25, 200);
-                color: #c8dce0;
-                border: 1px solid rgba(0, 200, 255, 0.2);
-                border-radius: 8px;
-                padding: 10px;
-            }
-            QScrollBar:vertical {
-                background: rgba(10, 15, 25, 150); width: 8px; border-radius: 4px;
-            }
-            QScrollBar::handle:vertical {
-                background: rgba(0, 200, 255, 0.3); border-radius: 4px; min-height: 20px;
-            }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
-        """)
-
-    def log_ekle(self, metin, tip="bilgi"):
-        renk_haritasi = {
-            "bilgi": "#c8dce0",
-            "kullanici": "#00c8ff",
-            "asistan": "#00ff78",
-            "hata": "#ff3c3c",
-            "sistem": "#ffa000",
-            "soluk": "#506882",
-        }
-        renk = renk_haritasi.get(tip, "#c8dce0")
-        zaman = time.strftime("%H:%M:%S")
-        if tip == "kullanici":
-            self.append(f'<span style="color:#506882;">[{zaman}]</span> <span style="color:{renk};">SEN:</span> <span style="color:#e0e8f0;">{metin}</span>')
-        elif tip == "asistan":
-            self.append(f'<span style="color:#506882;">[{zaman}]</span> <span style="color:{renk};">ASISTAN:</span> <span style="color:#e0e8f0;">{metin}</span>')
-        else:
-            self.append(f'<span style="color:#506882;">[{zaman}]</span> <span style="color:{renk};">{metin}</span>')
-        self.verticalScrollBar().setValue(self.verticalScrollBar().maximum())
-
-
-class BaslangicThread(QThread):
-    """Baslangic kontrollerini ayri thread'de yapar"""
-    tamamlandi = pyqtSignal(bool, str)
-    ilerleme = pyqtSignal(str)
-
-    def __init__(self, asistan):
+    def __init__(self):
         super().__init__()
-        self.asistan = asistan
+        self.sinyaller = GuiSinyalleri()
+        self._setup_ui()
+        self._connect_signals()
 
-    def run(self):
-        try:
-            self.ilerleme.emit("Guncelleme kontrol ediliyor...")
-            try:
-                self.asistan.guncelleyici.baslangicta_kontrol()
-            except:
-                pass
+    def _setup_ui(self):
+        """Arayüzü oluştur"""
+        self.setWindowTitle("ATLAS — Sesli AI Asistan")
+        self.setMinimumSize(700, 500)
+        self.resize(800, 600)
 
-            ai_motor = self.asistan.config.get("ai_motor", "gemini")
-            if ai_motor == "gemini":
-                self.ilerleme.emit("Google Gemini AI kontrol ediliyor...")
-                bagli, modeller = self.asistan.yapay_zeka.baglanti_kontrol()
-                if not bagli:
-                    self.ilerleme.emit("[!] Gemini baglantisi yok - sadece yerel komutlar")
-                else:
-                    self.ilerleme.emit("[OK] Gemini bagli!")
-
-                # GERCEK Gemini testi
-                self.ilerleme.emit("Gemini API test ediliyor...")
-                test_ok, test_mesaj = self.asistan.yapay_zeka.gemini_test()
-                if test_ok:
-                    self.ilerleme.emit(f"[OK] {test_mesaj}")
-                else:
-                    self.ilerleme.emit(f"[!] {test_mesaj}")
-                    self.ilerleme.emit("Yerel komutlar (184+) yine de calisir!")
-            else:
-                self.ilerleme.emit("Ollama baglantisi kontrol ediliyor...")
-                bagli, modeller = self.asistan.yapay_zeka.baglanti_kontrol()
-                if not bagli:
-                    self.ilerleme.emit("[!] Ollama calismiyor - sadece yerel komutlar")
-
-            self.ilerleme.emit("Mikrofon kontrol ediliyor...")
-            mikrofonlar = self.asistan.ses_tanima.mikrofon_listele()
-            if not mikrofonlar:
-                self.tamamlandi.emit(False, "Mikrofon bulunamadi!")
-                return
-
-            motor = self.asistan.config.get("stt_motor", "google")
-            if motor == "google":
-                self.ilerleme.emit("Google Ses Tanima hazirlaniyor...")
-            else:
-                self.ilerleme.emit("Whisper modeli yukleniyor...")
-            self.asistan.ses_tanima.modeli_yukle()
-
-            # Kullanici tanima durumu
-            if self.asistan.kullanici_adi:
-                self.ilerleme.emit(f"Kullanici: {self.asistan.kullanici_adi}")
-            else:
-                self.ilerleme.emit("Ilk kullanim - adiniz sorulacak")
-                self.asistan.isim_bekleniyor = True
-
-            self.tamamlandi.emit(True, "Tum kontroller basarili! (v7.6)")
-
-        except Exception as e:
-            self.tamamlandi.emit(False, f"Hata: {str(e)}")
-
-
-class AsistanThread(QThread):
-    metin_algilandi = pyqtSignal(str)
-    yanit_geldi = pyqtSignal(str)
-    durum_degisti = pyqtSignal(str)
-    aksiyon_yapildi = pyqtSignal(str)
-    hata_olustu = pyqtSignal(str)
-
-    def __init__(self, asistan):
-        super().__init__()
-        self.asistan = asistan
-        self.calistir = True
-
-    def run(self):
-        self.asistan.ses_tanima.tekrar_baslat()
-
-        # Karsilama mesaji
-        if self.asistan.isim_bekleniyor:
-            self.durum_degisti.emit("konusuyor")
-            self.yanit_geldi.emit("Merhaba! Adini ogrenebilir miyim?")
-            self.asistan.sesli_yanit.konus("Merhaba! Ben senin sesli asistaninim. Adini ogrenebilir miyim?")
-            # Hoparlor yankisi mikrofona dusmesin diye bekle
-            time.sleep(1.5)
-        elif self.asistan.kullanici_adi:
-            self.durum_degisti.emit("konusuyor")
-            karsilama = f"Merhaba {self.asistan.kullanici_adi}! Seni dinliyorum."
-            self.yanit_geldi.emit(karsilama)
-            self.asistan.sesli_yanit.konus(karsilama)
-            time.sleep(0.5)
-        else:
-            self.durum_degisti.emit("konusuyor")
-            self.yanit_geldi.emit("Merhaba! Seni dinliyorum.")
-            self.asistan.sesli_yanit.konus("Merhaba! Seni dinliyorum.")
-            time.sleep(0.5)
-
-        while self.calistir:
-            try:
-                self.durum_degisti.emit("dinliyor")
-                metin = self.asistan.ses_tanima.dinle_ve_cevir()
-
-                if not self.calistir:
-                    break
-
-                if metin:
-                    # Isim bekleniyor mu?
-                    if self.asistan.isim_bekleniyor:
-                        self._isim_kaydet(metin)
-                        continue
-
-                    from yapay_zeka import turkce_normalize
-                    metin_kucuk = turkce_normalize(metin.lower().strip())
-                    cikis_komutlari = ["kapat kendini", "kendini kapat", "cikis", "gule gule"]
-                    if any(k in metin_kucuk for k in cikis_komutlari):
-                        self.yanit_geldi.emit("Gorusmek uzere!")
-                        self.durum_degisti.emit("konusuyor")
-                        self.asistan.sesli_yanit.konus("Gorusmek uzere!")
-                        self.durum_degisti.emit("bekliyor")
-                        self.calistir = False
-                        break
-
-                    self.metin_algilandi.emit(metin)
-                    self._komut_islet(metin)
-            except Exception as e:
-                if self.calistir:
-                    self.hata_olustu.emit(str(e))
-                    self.durum_degisti.emit("hata")
-                    import traceback
-                    traceback.print_exc()
-                    time.sleep(1)
-
-    def _isim_kaydet(self, metin):
-        """Ilk acilista isim kaydet - Turkce isim veritabani + yanki filtreli"""
-        # Yanki filtresi - asistanin kendi sorusu olmamali
-        yanki_kelimeleri = ["merhaba", "asistan", "ogrenebilir", "yardimci",
-                           "dinliyorum", "miyim", "hello", "assist", "help",
-                           "nasil", "olabilirim", "senin", "sesli"]
-        metin_kucuk = metin.lower().strip()
-        yanki_mi = any(k in metin_kucuk for k in yanki_kelimeleri)
-
-        if yanki_mi:
-            print(f"[!] Yanki algilandi, tekrar sorulacak: '{metin}'")
-            self.yanit_geldi.emit("Adini net duyamadim. Sadece adini soyler misin?")
-            self.durum_degisti.emit("konusuyor")
-            self.asistan.sesli_yanit.konus("Adini net duyamadim. Sadece adini soyler misin?")
-            time.sleep(1.0)
-            return
-
-        # Turkce isim veritabani ile eslestir ve duzelt
-        isim_sonuc, kesinlik = isim_temizle_ve_duzelt(metin)
-
-        if isim_sonuc and len(isim_sonuc) >= 2:
-            self.asistan.hafiza.kullanici_adi_kaydet(isim_sonuc)
-            self.asistan.kullanici_adi = isim_sonuc
-            self.asistan.yapay_zeka.kullanici_adi = isim_sonuc
-            self.asistan.isim_bekleniyor = False
-
-            karsilama = f"Memnun oldum {isim_sonuc}! Sana nasil yardimci olabilirim?"
-            self.metin_algilandi.emit(f"[Isim: {isim_sonuc} ({kesinlik})]")
-            self.yanit_geldi.emit(karsilama)
-            self.durum_degisti.emit("konusuyor")
-            self.asistan.sesli_yanit.konus(karsilama)
-            time.sleep(0.5)
-        else:
-            print(f"[!] Isim anlasilamadi: '{metin}'")
-            self.yanit_geldi.emit("Adini net duyamadim. Sadece adini soyler misin?")
-            self.durum_degisti.emit("konusuyor")
-            self.asistan.sesli_yanit.konus("Adini net duyamadim. Sadece adini soyler misin?")
-            time.sleep(1.0)
-
-    def _komut_islet(self, metin):
-        self.durum_degisti.emit("isliyor")
-        baslangic = time.time()
-
-        hafiza_ozeti = self.asistan.hafiza.hafiza_ozeti()
-        yanit = self.asistan.yapay_zeka.komut_isle(metin, hafiza_ozeti)
-
-        ai_sure = time.time() - baslangic
-
-        if not yanit:
-            self.yanit_geldi.emit("Anlayamadim, tekrar soyler misin?")
-            self.durum_degisti.emit("dinliyor")
-            return
-
-        if yanit.get("soru_sor"):
-            self.yanit_geldi.emit(yanit["soru_sor"])
-            self.durum_degisti.emit("dinliyor")
-            return
-
-        # Isim degistirme komutu
-        yanit_metni_kontrol = yanit.get("yanit", "")
-        if yanit_metni_kontrol == "__ISIM_DEGISTIR__":
-            self.asistan.isim_bekleniyor = True
-            soru = "Tabii! Adini soyler misin?"
-            self.yanit_geldi.emit(soru)
-            self.durum_degisti.emit("konusuyor")
-            self.asistan.sesli_yanit.konus(soru)
-            self.durum_degisti.emit("dinliyor")
-            return
-
-        # Aksiyonlari isle
-        aksiyonlar = yanit.get("aksiyonlar", [])
-        tum_basarili = True
-        for aksiyon in aksiyonlar:
-            fonk = aksiyon.get("fonksiyon")
-            params = aksiyon.get("parametreler", {})
-            if fonk:
-                basarili, sonuc = self.asistan.bilgisayar.calistir(fonk, params)
-                if basarili:
-                    self.aksiyon_yapildi.emit(f"{fonk}: {sonuc}")
-                else:
-                    tum_basarili = False
-                    self.hata_olustu.emit(f"{fonk}: {sonuc}")
-
-        # Hafiza islemleri
-        tercih = yanit.get("tercih_kaydet")
-        if tercih and isinstance(tercih, dict):
-            for k, v in tercih.items():
-                self.asistan.hafiza.tercih_kaydet(k, v)
-
-        rutin = yanit.get("rutin_kaydet")
-        if rutin and isinstance(rutin, dict):
-            self.asistan.hafiza.rutin_kaydet(rutin.get("isim", ""), rutin.get("komutlar", []))
-
-        ogrenme = yanit.get("ogren")
-        if ogrenme and isinstance(ogrenme, dict):
-            for k, v in ogrenme.items():
-                self.asistan.hafiza.ogren(k, v)
-
-        self.asistan.hafiza.gecmis_ekle(metin, str(aksiyonlar), tum_basarili)
-
-        # Sesli yanit
-        yanit_metni = yanit.get("yanit", "Tamam!")
-        self.durum_degisti.emit("konusuyor")
-
-        katman = "Yerel" if ai_sure < 0.05 else "AI"
-        self.yanit_geldi.emit(f"{yanit_metni}  [{katman} {ai_sure:.1f}sn]")
-
-        self.asistan.sesli_yanit.konus(yanit_metni)
-
-        toplam = time.time() - baslangic
-        print(f"[SURE] {katman}:{ai_sure:.1f}s Toplam:{toplam:.1f}s")
-
-        self.durum_degisti.emit("dinliyor")
-
-    def durdur(self):
-        self.calistir = False
-        self.asistan.ses_tanima.durdur()
-
-
-class JarvisPencere(QMainWindow):
-    def __init__(self, asistan):
-        super().__init__()
-        self.asistan = asistan
-        self.asistan_thread = None
-        self.baslangic_thread = None
-        self._pencere_ayarla()
-        self._arayuz_olustur()
-        self._sistem_tepsisi_olustur()
-
-    def _pencere_ayarla(self):
-        self.setWindowTitle("SESLI AI ASISTAN")
-        self.setMinimumSize(500, 650)
-        self.resize(520, 700)
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self._surukle_pos = None
-
-    def _arayuz_olustur(self):
-        ana_widget = QWidget()
-        self.setCentralWidget(ana_widget)
-        ana_layout = QVBoxLayout(ana_widget)
-        ana_layout.setContentsMargins(15, 15, 15, 15)
+        # Ana widget
+        merkez = QWidget()
+        self.setCentralWidget(merkez)
+        ana_layout = QVBoxLayout(merkez)
+        ana_layout.setContentsMargins(0, 0, 0, 0)
         ana_layout.setSpacing(0)
 
-        self.panel = QFrame()
-        self.panel.setStyleSheet("QFrame { background-color: rgba(10, 12, 20, 230); border: 1px solid rgba(0, 200, 255, 0.3); border-radius: 16px; }")
-        panel_layout = QVBoxLayout(self.panel)
-        panel_layout.setContentsMargins(20, 15, 20, 20)
-        panel_layout.setSpacing(12)
+        # Stil
+        self._stil_uygula()
 
-        # Baslik bar
-        baslik_bar = QHBoxLayout()
-        baslik = QLabel("SESLI AI ASISTAN")
-        baslik.setFont(QFont("Consolas", 14, QFont.Weight.Bold))
-        baslik.setStyleSheet("color: #00c8ff; background: transparent; border: none;")
-        baslik_bar.addWidget(baslik)
-        baslik_bar.addStretch()
-        surum_label = QLabel(f"v{self.asistan.config.get('surum', '7.0')}")
-        surum_label.setFont(QFont("Consolas", 9))
-        surum_label.setStyleSheet("color: #506882; background: transparent; border: none;")
-        baslik_bar.addWidget(surum_label)
+        # ── Üst Bar ──
+        ust_bar = QFrame()
+        ust_bar.setFixedHeight(56)
+        ust_bar.setStyleSheet(f"""
+            QFrame {{
+                background-color: {RENKLER['panel']};
+                border-bottom: 1px solid {RENKLER['panel_border']};
+            }}
+        """)
+        ust_layout = QHBoxLayout(ust_bar)
+        ust_layout.setContentsMargins(20, 0, 20, 0)
 
-        btn_kucult = QPushButton("-")
-        btn_kucult.setFixedSize(30, 30)
-        btn_kucult.setStyleSheet(self._buton_stili("#506882"))
-        btn_kucult.clicked.connect(self.showMinimized)
-        baslik_bar.addWidget(btn_kucult)
+        # Logo / İsim
+        logo_label = QLabel("⬡ ATLAS")
+        logo_label.setFont(QFont("Consolas", 16, QFont.Weight.Bold))
+        logo_label.setStyleSheet(f"color: {RENKLER['vurgu']}; letter-spacing: 3px;")
+        ust_layout.addWidget(logo_label)
 
-        btn_kapat = QPushButton("X")
-        btn_kapat.setFixedSize(30, 30)
-        btn_kapat.setStyleSheet(self._buton_stili("#ff3c3c"))
-        btn_kapat.clicked.connect(self._kapat)
-        baslik_bar.addWidget(btn_kapat)
-        panel_layout.addLayout(baslik_bar)
+        ust_layout.addStretch()
 
-        # Ayirici
-        ayirici = QFrame()
-        ayirici.setFixedHeight(1)
-        ayirici.setStyleSheet("background-color: rgba(0, 200, 255, 0.15); border: none;")
-        panel_layout.addWidget(ayirici)
+        # Sürüm
+        self.surum_label = QLabel("v8.0")
+        self.surum_label.setFont(QFont("Consolas", 9))
+        self.surum_label.setStyleSheet(f"color: {RENKLER['metin_soluk']};")
+        ust_layout.addWidget(self.surum_label)
 
-        # Daire gosterge
-        gosterge_layout = QHBoxLayout()
-        gosterge_layout.addStretch()
-        self.daire = DaireGosterge()
-        gosterge_layout.addWidget(self.daire)
-        gosterge_layout.addStretch()
-        panel_layout.addLayout(gosterge_layout)
+        ana_layout.addWidget(ust_bar)
 
-        # Dalga animasyonu
-        self.dalga = DalgaWidget()
-        panel_layout.addWidget(self.dalga)
+        # ── Orta Alan ──
+        orta = QWidget()
+        orta_layout = QHBoxLayout(orta)
+        orta_layout.setContentsMargins(0, 0, 0, 0)
+        orta_layout.setSpacing(0)
 
-        # Durum label
-        self.durum_label = QLabel("Baslatiliyor...")
-        self.durum_label.setFont(QFont("Consolas", 10))
-        self.durum_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.durum_label.setStyleSheet("color: #ffa000; background: transparent; border: none;")
-        panel_layout.addWidget(self.durum_label)
+        # Sol panel — Konuşma
+        sol_panel = QFrame()
+        sol_panel.setStyleSheet(f"background-color: {RENKLER['arkaplan']};")
+        sol_layout = QVBoxLayout(sol_panel)
+        sol_layout.setContentsMargins(16, 12, 8, 12)
 
-        # Butonlar
-        buton_layout = QHBoxLayout()
-        buton_layout.setSpacing(10)
+        # Konuşma alanı
+        self.konusma_alani = QTextEdit()
+        self.konusma_alani.setReadOnly(True)
+        self.konusma_alani.setFont(QFont("Segoe UI", 10))
+        self.konusma_alani.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {RENKLER['arkaplan']};
+                color: {RENKLER['metin']};
+                border: none;
+                padding: 8px;
+                selection-background-color: {RENKLER['vurgu_koyu']};
+            }}
+            QScrollBar:vertical {{
+                background: {RENKLER['panel']};
+                width: 8px;
+                border-radius: 4px;
+            }}
+            QScrollBar::handle:vertical {{
+                background: {RENKLER['panel_border']};
+                border-radius: 4px;
+                min-height: 30px;
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px;
+            }}
+        """)
+        sol_layout.addWidget(self.konusma_alani)
 
-        self.btn_baslat = QPushButton("BASLATIYOR...")
-        self.btn_baslat.setFixedHeight(40)
-        self.btn_baslat.setFont(QFont("Consolas", 11, QFont.Weight.Bold))
-        self.btn_baslat.setStyleSheet(self._ana_buton_stili("#ffa000"))
-        self.btn_baslat.setEnabled(False)
-        self.btn_baslat.clicked.connect(self._baslat_durdur)
-        buton_layout.addWidget(self.btn_baslat)
+        orta_layout.addWidget(sol_panel, stretch=3)
 
-        self.btn_sifirla = QPushButton("SIFIRLA")
-        self.btn_sifirla.setFixedHeight(40)
-        self.btn_sifirla.setFont(QFont("Consolas", 11))
-        self.btn_sifirla.setStyleSheet(self._ana_buton_stili("#506882"))
-        self.btn_sifirla.clicked.connect(self._sohbet_sifirla)
-        buton_layout.addWidget(self.btn_sifirla)
-        panel_layout.addLayout(buton_layout)
+        # Sağ panel — Durum
+        sag_panel = QFrame()
+        sag_panel.setFixedWidth(220)
+        sag_panel.setStyleSheet(f"""
+            QFrame {{
+                background-color: {RENKLER['panel']};
+                border-left: 1px solid {RENKLER['panel_border']};
+            }}
+        """)
+        sag_layout = QVBoxLayout(sag_panel)
+        sag_layout.setContentsMargins(16, 16, 16, 16)
+        sag_layout.setSpacing(12)
 
-        # Log panel
-        self.log = LogPaneli()
-        self.log.setMinimumHeight(180)
-        panel_layout.addWidget(self.log)
+        # Beyin durumu başlığı
+        beyin_baslik = QLabel("BEYİN DURUMU")
+        beyin_baslik.setFont(QFont("Consolas", 9, QFont.Weight.Bold))
+        beyin_baslik.setStyleSheet(f"color: {RENKLER['vurgu']}; letter-spacing: 2px;")
+        sag_layout.addWidget(beyin_baslik)
 
-        # Istatistik
-        istat_layout = QHBoxLayout()
-        self.istat_label = QLabel("Komut: 0 | Basarili: 0")
-        self.istat_label.setFont(QFont("Consolas", 8))
-        self.istat_label.setStyleSheet("color: #506882; background: transparent; border: none;")
-        istat_layout.addWidget(self.istat_label)
-        istat_layout.addStretch()
-        ai_motor = self.asistan.config.get("ai_motor", "gemini")
-        if ai_motor == "gemini":
-            model_adi = f"Gemini {self.asistan.config.get('gemini_model', 'flash')}"
+        # Dikkat modu
+        self.mod_label = self._durum_karti_olustur("DİKKAT", "Başlatılıyor...")
+        sag_layout.addWidget(self.mod_label)
+
+        # Duygu
+        self.duygu_label = self._durum_karti_olustur("DUYGU", "—")
+        sag_layout.addWidget(self.duygu_label)
+
+        # Hafıza
+        self.hafiza_label = self._durum_karti_olustur("HAFIZA", "0 kayıt")
+        sag_layout.addWidget(self.hafiza_label)
+
+        # Sistem 1/2
+        self.sistem_label = self._durum_karti_olustur("KARAR", "Hazır")
+        sag_layout.addWidget(self.sistem_label)
+
+        sag_layout.addStretch()
+
+        # Saat
+        self.saat_label = QLabel("")
+        self.saat_label.setFont(QFont("Consolas", 22, QFont.Weight.Bold))
+        self.saat_label.setStyleSheet(f"color: {RENKLER['vurgu']};")
+        self.saat_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        sag_layout.addWidget(self.saat_label)
+
+        # Tarih
+        self.tarih_label = QLabel("")
+        self.tarih_label.setFont(QFont("Consolas", 9))
+        self.tarih_label.setStyleSheet(f"color: {RENKLER['metin_soluk']};")
+        self.tarih_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        sag_layout.addWidget(self.tarih_label)
+
+        orta_layout.addWidget(sag_panel)
+        ana_layout.addWidget(orta, stretch=1)
+
+        # ── Alt Bar ──
+        alt_bar = QFrame()
+        alt_bar.setFixedHeight(40)
+        alt_bar.setStyleSheet(f"""
+            QFrame {{
+                background-color: {RENKLER['panel']};
+                border-top: 1px solid {RENKLER['panel_border']};
+            }}
+        """)
+        alt_layout = QHBoxLayout(alt_bar)
+        alt_layout.setContentsMargins(20, 0, 20, 0)
+
+        # Durum göstergesi
+        self.durum_nokta = QLabel("●")
+        self.durum_nokta.setFont(QFont("Segoe UI", 10))
+        self.durum_nokta.setStyleSheet(f"color: {RENKLER['basari']};")
+        alt_layout.addWidget(self.durum_nokta)
+
+        self.durum_label = QLabel("Başlatılıyor...")
+        self.durum_label.setFont(QFont("Segoe UI", 9))
+        self.durum_label.setStyleSheet(f"color: {RENKLER['metin_soluk']};")
+        alt_layout.addWidget(self.durum_label)
+
+        alt_layout.addStretch()
+
+        ana_layout.addWidget(alt_bar)
+
+        # Saat timer
+        self._saat_timer = QTimer()
+        self._saat_timer.timeout.connect(self._saat_guncelle)
+        self._saat_timer.start(1000)
+        self._saat_guncelle()
+
+    def _durum_karti_olustur(self, baslik, deger):
+        """Sağ paneldeki durum kartı"""
+        kart = QFrame()
+        kart.setStyleSheet(f"""
+            QFrame {{
+                background-color: {RENKLER['arkaplan']};
+                border: 1px solid {RENKLER['panel_border']};
+                border-radius: 6px;
+                padding: 8px;
+            }}
+        """)
+        layout = QVBoxLayout(kart)
+        layout.setContentsMargins(10, 6, 10, 6)
+        layout.setSpacing(2)
+
+        baslik_l = QLabel(baslik)
+        baslik_l.setFont(QFont("Consolas", 7, QFont.Weight.Bold))
+        baslik_l.setStyleSheet(f"color: {RENKLER['metin_soluk']}; letter-spacing: 1px; border: none;")
+        layout.addWidget(baslik_l)
+
+        deger_l = QLabel(deger)
+        deger_l.setObjectName("deger")
+        deger_l.setFont(QFont("Segoe UI", 10))
+        deger_l.setStyleSheet(f"color: {RENKLER['metin']}; border: none;")
+        layout.addWidget(deger_l)
+
+        return kart
+
+    def _kart_deger_guncelle(self, kart, yeni_deger):
+        """Durum kartının değerini güncelle"""
+        deger_label = kart.findChild(QLabel, "deger")
+        if deger_label:
+            deger_label.setText(yeni_deger)
+
+    def _stil_uygula(self):
+        """Global stil"""
+        self.setStyleSheet(f"""
+            QMainWindow {{
+                background-color: {RENKLER['arkaplan']};
+            }}
+            QWidget {{
+                background-color: transparent;
+                color: {RENKLER['metin']};
+            }}
+        """)
+
+    def _connect_signals(self):
+        """Sinyalleri bağla"""
+        self.sinyaller.mesaj_ekle.connect(self._mesaj_ekle)
+        self.sinyaller.durum_guncelle.connect(self._durum_guncelle)
+        self.sinyaller.mod_guncelle.connect(self._mod_guncelle)
+        self.sinyaller.bellek_guncelle.connect(self._bellek_guncelle)
+        self.sinyaller.hata_goster.connect(self._hata_goster)
+        self.sinyaller.surum_goster.connect(self._surum_goster)
+        self.sinyaller.duygu_guncelle.connect(self._duygu_guncelle)
+
+    def _saat_guncelle(self):
+        """Saat ve tarihi güncelle"""
+        simdi = datetime.now()
+        self.saat_label.setText(simdi.strftime("%H:%M"))
+
+        gunler = {0:"Pzt", 1:"Sal", 2:"Çar", 3:"Per", 4:"Cum", 5:"Cmt", 6:"Paz"}
+        aylar = {1:"Oca", 2:"Şub", 3:"Mar", 4:"Nis", 5:"May", 6:"Haz",
+                 7:"Tem", 8:"Ağu", 9:"Eyl", 10:"Eki", 11:"Kas", 12:"Ara"}
+        gun = gunler.get(simdi.weekday(), "")
+        ay = aylar.get(simdi.month, "")
+        self.tarih_label.setText(f"{gun}, {simdi.day} {ay}")
+
+    # ── Sinyal Slotları ──
+
+    def _mesaj_ekle(self, rol, mesaj):
+        """Konuşma alanına mesaj ekle"""
+        zaman = datetime.now().strftime("%H:%M")
+
+        if rol == "kullanici":
+            renk = RENKLER['kullanici']
+            ikon = "👤"
+            isim = "SEN"
+        elif rol == "asistan":
+            renk = RENKLER['asistan']
+            ikon = "⬡"
+            isim = "ATLAS"
+        elif rol == "sistem":
+            renk = RENKLER['metin_soluk']
+            ikon = "⚙️"
+            isim = "SİSTEM"
         else:
-            model_adi = self.asistan.config.get("ollama_model", "llama3")
-        self.model_label = QLabel(f"Model: {model_adi}")
-        self.model_label.setFont(QFont("Consolas", 8))
-        self.model_label.setStyleSheet("color: #506882; background: transparent; border: none;")
-        istat_layout.addWidget(self.model_label)
-        panel_layout.addLayout(istat_layout)
+            renk = RENKLER['metin']
+            ikon = ""
+            isim = rol
 
-        ana_layout.addWidget(self.panel)
-
-        # Baslangic
-        self.log.log_ekle("Sesli AI Asistan v7.6 baslatildi", "sistem")
-        self.log.log_ekle("Sistem kontrolleri yapiliyor...", "soluk")
-        self.daire.durum_ayarla("yukleniyor")
-
-        # Otomatik baslat
-        QTimer.singleShot(500, self._otomatik_baslat)
-
-    def _buton_stili(self, renk):
-        r = int(renk.lstrip('#')[0:2], 16)
-        g = int(renk.lstrip('#')[2:4], 16)
-        b = int(renk.lstrip('#')[4:6], 16)
-        return f"""
-            QPushButton {{ background: transparent; color: {renk}; border: 1px solid {renk}; border-radius: 6px; font-family: Consolas; font-size: 12px; font-weight: bold; }}
-            QPushButton:hover {{ background: rgba({r}, {g}, {b}, 30); }}
+        html = f"""
+        <div style="margin: 4px 0; padding: 4px 0;">
+            <span style="color: {RENKLER['metin_soluk']}; font-size: 9px; font-family: Consolas;">{zaman}</span>
+            <span style="color: {renk}; font-weight: bold;"> {ikon} {isim}:</span>
+            <span style="color: {RENKLER['metin']};">{mesaj}</span>
+        </div>
         """
+        self.konusma_alani.append(html)
 
-    def _ana_buton_stili(self, renk):
-        r = int(renk.lstrip('#')[0:2], 16)
-        g = int(renk.lstrip('#')[2:4], 16)
-        b = int(renk.lstrip('#')[4:6], 16)
-        return f"""
-            QPushButton {{ background: rgba({r}, {g}, {b}, 25); color: {renk}; border: 1px solid {renk}; border-radius: 8px; }}
-            QPushButton:hover {{ background: rgba({r}, {g}, {b}, 50); }}
-            QPushButton:pressed {{ background: rgba({r}, {g}, {b}, 80); }}
-        """
+        # Otomatik scroll
+        sb = self.konusma_alani.verticalScrollBar()
+        sb.setValue(sb.maximum())
 
-    def _sistem_tepsisi_olustur(self):
-        self.tray = QSystemTrayIcon(self)
-        pixmap = QPixmap(32, 32)
-        pixmap.fill(Qt.GlobalColor.transparent)
-        painter = QPainter(pixmap)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QBrush(Renkler.ANA))
-        painter.drawEllipse(4, 4, 24, 24)
-        painter.end()
-        self.tray.setIcon(QIcon(pixmap))
+    def _durum_guncelle(self, durum):
+        """Alt bar durum metni"""
+        self.durum_label.setText(durum)
 
-        menu = QMenu()
-        goster_action = QAction("Goster", self)
-        goster_action.triggered.connect(self.show)
-        menu.addAction(goster_action)
-        kapat_action = QAction("Kapat", self)
-        kapat_action.triggered.connect(self._kapat)
-        menu.addAction(kapat_action)
-        self.tray.setContextMenu(menu)
-        self.tray.activated.connect(self._tray_tiklandi)
-        self.tray.show()
-
-    def _tray_tiklandi(self, reason):
-        if reason == QSystemTrayIcon.ActivationReason.Trigger:
-            if self.isVisible():
-                self.hide()
-            else:
-                self.show()
-                self.activateWindow()
-
-    def _otomatik_baslat(self):
-        self.baslangic_thread = BaslangicThread(self.asistan)
-        self.baslangic_thread.ilerleme.connect(self._baslangic_ilerleme)
-        self.baslangic_thread.tamamlandi.connect(self._baslangic_tamamlandi)
-        self.baslangic_thread.start()
-
-    def _baslangic_ilerleme(self, mesaj):
-        self.log.log_ekle(mesaj, "soluk")
-        self.durum_label.setText(mesaj)
-
-    def _baslangic_tamamlandi(self, basarili, mesaj):
-        if basarili:
-            self.log.log_ekle(mesaj, "sistem")
-
-            # Mikrofon otomatik baslar - BASLAT butonu yok
-            self.btn_baslat.setText("DURDUR")
-            self.btn_baslat.setStyleSheet(self._ana_buton_stili("#ff3c3c"))
-            self.btn_baslat.setEnabled(True)
-            self.durum_label.setText("Seni dinliyorum...")
-            self.durum_label.setStyleSheet("color: #00c8ff; background: transparent; border: none;")
-            self.dalga.dinlemeye_basla()
-            self.daire.durum_ayarla("dinliyor")
-
-            self.asistan_thread = AsistanThread(self.asistan)
-            self.asistan_thread.metin_algilandi.connect(self._metin_algilandi)
-            self.asistan_thread.yanit_geldi.connect(self._yanit_geldi)
-            self.asistan_thread.durum_degisti.connect(self._durum_degisti)
-            self.asistan_thread.aksiyon_yapildi.connect(self._aksiyon_yapildi)
-            self.asistan_thread.hata_olustu.connect(self._hata_olustu)
-            self.asistan_thread.finished.connect(self._thread_bitti)
-            self.asistan_thread.start()
+        # Durum noktası rengi
+        if "hata" in durum.lower() or "bağlantı" in durum.lower():
+            self.durum_nokta.setStyleSheet(f"color: {RENKLER['hata']};")
+        elif "dinl" in durum.lower() or "bekl" in durum.lower():
+            self.durum_nokta.setStyleSheet(f"color: {RENKLER['basari']};")
+        elif "düşün" in durum.lower() or "oluştur" in durum.lower():
+            self.durum_nokta.setStyleSheet(f"color: {RENKLER['uyari']};")
         else:
-            self.log.log_ekle(mesaj, "hata")
-            self.daire.durum_ayarla("hata")
-            self.durum_label.setText("Hata!")
-            self.durum_label.setStyleSheet("color: #ff3c3c; background: transparent; border: none;")
-            self.btn_baslat.setText("TEKRAR DENE")
-            self.btn_baslat.setStyleSheet(self._ana_buton_stili("#ffa000"))
-            self.btn_baslat.setEnabled(True)
+            self.durum_nokta.setStyleSheet(f"color: {RENKLER['vurgu']};")
 
-    def _baslat_durdur(self):
-        if self.asistan_thread and self.asistan_thread.isRunning():
-            self._durdur()
-        else:
-            self._baslat()
-
-    def _baslat(self):
-        self.btn_baslat.setText("BASLATIYOR...")
-        self.btn_baslat.setEnabled(False)
-        self.daire.durum_ayarla("yukleniyor")
-        self._otomatik_baslat()
-
-    def _durdur(self):
-        if self.asistan_thread:
-            self.asistan_thread.durdur()
-        self.btn_baslat.setText("BASLAT")
-        self.btn_baslat.setStyleSheet(self._ana_buton_stili("#00c8ff"))
-        self.durum_label.setText("Durduruldu")
-        self.durum_label.setStyleSheet("color: #506882; background: transparent; border: none;")
-        self.dalga.dinlemeyi_durdur()
-        self.daire.durum_ayarla("bekliyor")
-        self.log.log_ekle("Dinleme durduruldu.", "sistem")
-
-    def _sohbet_sifirla(self):
-        self.asistan.yapay_zeka.sohbet_sifirla()
-        self.log.log_ekle("Sohbet gecmisi sifirlandi.", "sistem")
-
-    def _metin_algilandi(self, metin):
-        self.log.log_ekle(metin, "kullanici")
-
-    def _yanit_geldi(self, yanit):
-        self.log.log_ekle(yanit, "asistan")
-
-    def _durum_degisti(self, durum):
-        self.daire.durum_ayarla(durum)
-        metinler = {
-            "dinliyor": "Seni dinliyorum...",
-            "isliyor": "Komut isleniyor...",
-            "konusuyor": "Konusuyor...",
-            "bekliyor": "Hazir",
-            "hata": "Hata olustu!",
+    def _mod_guncelle(self, mod):
+        """Dikkat modu kartını güncelle"""
+        mod_metinleri = {
+            "pasif": "🔇 Pasif",
+            "aktif": "🎙️ Aktif Dinleme",
+            "isim": "👤 İsim Öğrenme",
+            "mesgul": "💭 Düşünüyor",
         }
-        self.durum_label.setText(metinler.get(durum, ""))
+        self._kart_deger_guncelle(self.mod_label, mod_metinleri.get(mod, mod))
 
-        if durum == "dinliyor":
-            self.durum_label.setStyleSheet("color: #00c8ff; background: transparent; border: none;")
-            self.dalga.dinlemeye_basla()
-        elif durum == "konusuyor":
-            self.durum_label.setStyleSheet("color: #00ff78; background: transparent; border: none;")
-            self.dalga.dinlemeyi_durdur()
-        elif durum == "isliyor":
-            self.durum_label.setStyleSheet("color: #ffa000; background: transparent; border: none;")
-            self.dalga.dinlemeyi_durdur()
-        else:
-            self.dalga.dinlemeyi_durdur()
+    def _bellek_guncelle(self, durum):
+        """Hafıza kartını güncelle"""
+        toplam = durum.get("toplam_etkilesim", 0)
+        calisma = durum.get("calisma_bellegi", 0)
+        self._kart_deger_guncelle(
+            self.hafiza_label,
+            f"💬 {calisma}/7 aktif | 📊 {toplam} toplam"
+        )
 
-        istat = self.asistan.hafiza.istatistikler()
-        self.istat_label.setText(f"Komut: {istat.get('toplam_komut', 0)} | Basarili: {istat.get('basarili_komut', 0)}")
+    def _duygu_guncelle(self, duygu):
+        """Duygu kartını güncelle"""
+        duygu_emojileri = {
+            "mutlu": "😊 Mutlu", "uzgun": "😔 Üzgün",
+            "sinirli": "😤 Sinirli", "merakli": "🤔 Meraklı",
+            "aceleci": "⚡ Aceleci", "notr": "😐 Nötr",
+        }
+        self._kart_deger_guncelle(
+            self.duygu_label,
+            duygu_emojileri.get(duygu, f"❓ {duygu}")
+        )
 
-    def _aksiyon_yapildi(self, mesaj):
-        self.log.log_ekle(mesaj, "bilgi")
+    def _hata_goster(self, hata):
+        """Hata mesajı göster"""
+        self._mesaj_ekle("sistem", f"⚠️ {hata}")
 
-    def _hata_olustu(self, mesaj):
-        self.log.log_ekle(mesaj, "hata")
-
-    def _thread_bitti(self):
-        self._durdur()
-
-    def _kapat(self):
-        if self.asistan_thread and self.asistan_thread.isRunning():
-            self.asistan_thread.durdur()
-            self.asistan_thread.wait(3000)
-        self.tray.hide()
-        QApplication.quit()
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            self._surukle_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
-
-    def mouseMoveEvent(self, event):
-        if self._surukle_pos and event.buttons() == Qt.MouseButton.LeftButton:
-            self.move(event.globalPosition().toPoint() - self._surukle_pos)
-
-    def mouseReleaseEvent(self, event):
-        self._surukle_pos = None
-
-    def closeEvent(self, event):
-        event.ignore()
-        self.hide()
+    def _surum_goster(self, surum):
+        """Sürüm bilgisi güncelle"""
+        self.surum_label.setText(f"v{surum}")
