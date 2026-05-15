@@ -51,14 +51,14 @@ def config_yukle():
 
     # Varsayılan config
     varsayilan = {
-        "version": "8.0",
+        "version": "8.2",
         "asistan_adi": "ATLAS",
         "tetik_kelime": "atlas",
         "kullanici": {"ad": "", "ses_profili": {}, "tercihler": {}},
         "stt": {
             "motor": "google", "dil": "tr-TR", "enerji_esigi": 300,
             "dinamik_esik": True, "kalibrasyon_suresi": 1.5,
-            "dinleme_suresi": 7, "sessizlik_suresi": 2
+            "dinleme_suresi": 8, "sessizlik_suresi": 1.5
         },
         "tts": {
             "motor": "edge-tts", "ses": "tr-TR-AhmetNeural",
@@ -69,7 +69,7 @@ def config_yukle():
             "gemini_model": "gemini-2.0-flash", "gemini_api_key": "",
             "gemini_yedek_model": "gemini-1.5-flash",
             "ollama_model": "llama3", "ollama_url": "http://localhost:11434",
-            "max_token": 150, "sicaklik": 0.7, "timeout": 10
+            "max_token": 100, "sicaklik": 0.7, "timeout": 8
         },
         "hafiza": {
             "calisma_bellegi_boyutu": 7, "oturum_kayit": True,
