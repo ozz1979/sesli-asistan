@@ -22,13 +22,30 @@ logger = logging.getLogger("ATLAS.konusma")
 
 # Ön bellek — sık kullanılan yanıtlar önceden hazırlanır
 ON_BELLEK_YANITLARI = [
+    # Tetik yanıtları
     "Evet, buradayım! Seni dinliyorum.",
     "Evet buradayım! Ne yapabilirim senin için?",
     "Buradayım! Ne yapabilirim?",
+    "Evet, buradayım! Söyle bakalım.",
+    # Tanışma
     "Merhaba! Seninle tanışmak istiyorum. Adın ne?",
+    "Pardon, tekrar söyler misin? Adın ne?",
+    # Selamlama
+    "Merhaba! Nasılsın?",
+    "Merhaba! Sana nasıl yardımcı olabilirim?",
+    "Selam! Nasılsın?",
+    # Hal hatır
+    "İyiyim, teşekkür ederim! Sen nasılsın?",
+    "Harikayım! Sen nasıl hissediyorsun?",
+    "Çok iyiyim, sağol! Senin günün nasıl gidiyor?",
+    # Teşekkür / Veda
     "Rica ederim!",
+    "Ne demek, her zaman!",
+    "Görüşürüz! İyi günler!",
+    # Genel
     "Tamam, anladım.",
     "Bir saniye düşüneyim.",
+    "Seni duyamadım, tekrar eder misin?",
 ]
 
 
