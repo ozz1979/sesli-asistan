@@ -1,296 +1,498 @@
 """
-Sesli AI Asistan v7.6 - Ana Program
-- 3 Katmanli Akilli Mimari (yerel + Gemini + yedek)
-- Kullanici tanima (ilk acilista isim sorar)
-- Derin Gemini baglanti testi
-- On-bellekli TTS (aninda ses)
-- Google Speech Recognition (STT)
+ATLAS - Ana Orkestratör
+========================
+Beyin Karşılığı: Beyin Sapı + Talamus
+Görev: Tüm beyin modüllerini koordine etme, ana döngü
+
+Beyin sapı temel yaşam fonksiyonlarını yönetir,
+talamus duyusal bilgiyi doğru bölgelere yönlendirir.
+Bu modül tüm ATLAS bileşenlerini başlatır ve koordine eder.
 """
-import json
-import os
+
 import sys
+import os
+import json
 import time
+import threading
+import logging
+from datetime import datetime
 
-from ses_tanima import SesTanima
-from sesli_yanit import SesliYanit
-from yapay_zeka import YapayZeka
-from bilgisayar_kontrol import BilgisayarKontrol
-from hafiza import Hafiza
-from guncelleyici import Guncelleyici
-from turkce import isim_temizle_ve_duzelt
+# ============================================================
+# LOGGING AYARI
+# ============================================================
 
+def logging_ayarla(seviye="INFO"):
+    log_format = "%(asctime)s [%(name)s] %(levelname)s: %(message)s"
+    logging.basicConfig(
+        level=getattr(logging, seviye, logging.INFO),
+        format=log_format,
+        handlers=[
+            logging.FileHandler("atlas.log", encoding="utf-8"),
+            logging.StreamHandler()
+        ]
+    )
 
-class SesliAsistan:
-    def __init__(self):
-        self.config = self._config_yukle()
-        self.hafiza = Hafiza(self.config.get("hafiza_dosyasi", "hafiza.json"))
-        self.ses_tanima = SesTanima(self.config)
-        self.sesli_yanit = SesliYanit(self.config)
-        self.yapay_zeka = YapayZeka(self.config)
-        self.bilgisayar = BilgisayarKontrol()
-        self.guncelleyici = Guncelleyici(self.config)
+logger = logging.getLogger("ATLAS")
 
-        # Kullanici tanima
-        self.kullanici_adi = self.hafiza.kullanici_adi_al()
-        self.isim_bekleniyor = False
-        self.yapay_zeka.kullanici_adi = self.kullanici_adi
+# ============================================================
+# CONFIG YÜKLEME
+# ============================================================
 
-    def _config_yukle(self):
-        config_yolu = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
-        if os.path.exists(config_yolu):
-            with open(config_yolu, "r", encoding="utf-8") as f:
+CONFIG_DOSYA = "config.json"
+
+def config_yukle():
+    """Config dosyasını yükle, yoksa varsayılan oluştur"""
+    if os.path.exists(CONFIG_DOSYA):
+        try:
+            with open(CONFIG_DOSYA, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        return {}
+        except Exception as e:
+            logger.error(f"Config yükleme hatası: {e}")
 
-    def baslangic_kontrolleri(self):
-        print("\n[*] Sistem kontrolleri yapiliyor...\n")
+    # Varsayılan config
+    varsayilan = {
+        "version": "8.0",
+        "asistan_adi": "ATLAS",
+        "tetik_kelime": "atlas",
+        "kullanici": {"ad": "", "ses_profili": {}, "tercihler": {}},
+        "stt": {
+            "motor": "google", "dil": "tr-TR", "enerji_esigi": 300,
+            "dinamik_esik": True, "kalibrasyon_suresi": 1.5,
+            "dinleme_suresi": 7, "sessizlik_suresi": 2
+        },
+        "tts": {
+            "motor": "edge-tts", "ses": "tr-TR-AhmetNeural",
+            "hiz": "+0%", "on_bellek": True, "on_bellek_esik": 25
+        },
+        "ai": {
+            "birincil": "gemini", "yedek": "ollama",
+            "gemini_model": "gemini-2.0-flash", "gemini_api_key": "",
+            "gemini_yedek_model": "gemini-1.5-flash",
+            "ollama_model": "llama3", "ollama_url": "http://localhost:11434",
+            "max_token": 150, "sicaklik": 0.7, "timeout": 10
+        },
+        "hafiza": {
+            "calisma_bellegi_boyutu": 7, "oturum_kayit": True,
+            "epizodik_kayit": True, "semantik_kayit": True,
+            "prosedurel_kayit": True, "konsolidasyon_esigi": 3
+        },
+        "dikkat": {
+            "aktif_mod_suresi": 45, "pasif_dinleme": True,
+            "tetik_hassasiyeti": 0.6
+        },
+        "sistem": {
+            "otomatik_baslat": False, "guncelleme_kontrol": True,
+            "github_repo": "ozz1979/sesli-asistan", "log_seviyesi": "INFO",
+            "log_dosyasi": "atlas.log"
+        }
+    }
+    config_kaydet(varsayilan)
+    return varsayilan
 
-        # 0) Guncelleme
-        print("0) Guncelleme kontrol ediliyor...")
-        self.guncelleyici.baslangicta_kontrol()
+def config_kaydet(config):
+    """Config dosyasını kaydet"""
+    try:
+        with open(CONFIG_DOSYA, 'w', encoding='utf-8') as f:
+            json.dump(config, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        logger.error(f"Config kaydetme hatası: {e}")
 
-        ai_motor = self.config.get("ai_motor", "gemini")
 
-        if ai_motor == "gemini":
-            # 1) Gemini baglanti kontrolu
-            print("\n1) Google Gemini AI kontrol ediliyor...")
-            bagli, modeller = self.yapay_zeka.baglanti_kontrol()
-            if not bagli:
-                print("[UYARI] Gemini baglantisi yok - sadece yerel komutlar calisacak")
-            else:
-                print(f"   [OK] Gemini bagli!")
+# ============================================================
+# ATLAS BEYİN — ANA SINIF
+# ============================================================
 
-            # 2) GERCEK Gemini testi
-            print(f"\n2) Gemini API test ediliyor...")
-            test_ok, test_mesaj = self.yapay_zeka.gemini_test()
-            if test_ok:
-                print(f"   [OK] {test_mesaj}")
-            else:
-                print(f"   [UYARI] {test_mesaj}")
-                print(f"   Yerel komutlar (184+) yine de calisir!")
-        else:
-            print("1) Ollama baglantisi kontrol ediliyor...")
-            bagli, modeller = self.yapay_zeka.baglanti_kontrol()
-            if not bagli:
-                print("[UYARI] Ollama calismiyor - sadece yerel komutlar calisacak")
-            else:
-                print(f"   [OK] Ollama bagli!")
+class AtlasBeyin:
+    """
+    ATLAS'ın beyni — tüm modülleri koordine eder.
+    """
 
-            print(f"\n2) AI modeli kontrol ediliyor...")
-            hazir, mesaj = self.yapay_zeka.model_kontrol()
-            if not hazir:
-                print(f"   [!] {mesaj} - Yerel komutlar yine de calisir")
-            else:
-                print(f"   [OK] {mesaj}")
+    def __init__(self, config, arayuz=None):
+        self.config = config
+        self.arayuz = arayuz  # GUI sinyalleri
+        self._calisiyor = False
+        self._durum = "baslatiyor"
 
-        # 3) Mikrofon
-        print("\n3) Mikrofonlar kontrol ediliyor...")
-        mikrofonlar = self.ses_tanima.mikrofon_listele()
-        if not mikrofonlar:
-            print("[HATA] Mikrofon bulunamadi!")
+        # Hafıza dizini oluştur
+        os.makedirs("hafiza", exist_ok=True)
+
+        # ── Modülleri oluştur ──
+        from hafiza_sistemi import HafizaSistemi
+        from kalip_motoru import KalipMotoru
+        from dikkat_filtresi import DikkatFiltresi
+        from duygu_analizi import DuyguAnalizi
+        from ses_algilama import SesAlgilama
+        from dil_anlama import DilAnlama
+        from konusma_uretimi import KonusmaUretimi
+        from karar_merkezi import KararMerkezi
+        from kisilik_motoru import KisilikMotoru
+        from kimlik_tanima import KimlikTanima
+        from guncelleyici import Guncelleyici
+
+        self.hafiza = HafizaSistemi(config)
+        self.kalip = KalipMotoru(self.hafiza)
+        self.dikkat = DikkatFiltresi(config)
+        self.duygu = DuyguAnalizi()
+        self.ses = SesAlgilama(config)
+        self.dil = DilAnlama(self.ses, config)
+        self.konusma = KonusmaUretimi(config)
+        self.karar = KararMerkezi(self.kalip, self.hafiza, self.duygu, config)
+        self.kisilik = KisilikMotoru(self.hafiza)
+        self.kimlik = KimlikTanima(self.hafiza)
+        self.guncelleyici = Guncelleyici(config)
+
+        # Config'den kullanıcı adını hafızaya aktar
+        config_ad = config.get("kullanici", {}).get("ad", "")
+        if config_ad:
+            self.hafiza.kullanici_bilgisi_kaydet("ad", config_ad)
+
+    def baslat(self):
+        """ATLAS'ı başlat"""
+        self._calisiyor = True
+
+        # GUI bilgilendir
+        self._gui_durum("Başlatılıyor...")
+        self._gui_mesaj("sistem", "ATLAS v{} başlatılıyor...".format(
+            self.config.get("version", "8.0")))
+
+        # 1. Mikrofon başlat
+        self._gui_durum("Mikrofon hazırlanıyor...")
+        if not self.ses.baslat():
+            self._gui_hata(f"Mikrofon hatası: {self.ses.hata}")
+            self._gui_mesaj("sistem", f"⚠️ Mikrofon hatası: {self.ses.hata}")
             return False
-        for idx, isim in mikrofonlar[:5]:
-            print(f"   [MIC {idx}] {isim}")
 
-        # 4) STT
-        stt_motor = self.config.get("stt_motor", "google")
-        if stt_motor == "google":
-            print("\n4) Google Ses Tanima hazirlaniyor...")
+        self._gui_mesaj("sistem", "✅ Mikrofon hazır")
+
+        # 2. TTS ön bellek
+        self._gui_durum("Ses motoru hazırlanıyor...")
+        self._gui_mesaj("sistem", "✅ Ses motoru hazır")
+
+        # 3. AI kontrol
+        api_key = self.config.get("ai", {}).get("gemini_api_key", "")
+        if api_key:
+            masked = api_key[:8] + "..." + api_key[-4:]
+            self._gui_mesaj("sistem", f"✅ Gemini AI hazır ({masked})")
         else:
-            print("\n4) Ses tanima modeli yukleniyor...")
-        self.ses_tanima.modeli_yukle()
+            self._gui_mesaj("sistem", "⚠️ Gemini API key ayarlanmamış — config.json'da 'gemini_api_key' alanını doldurun")
 
-        # Ollama RAM uyarisi
-        self._ollama_kontrol()
+        # 4. Hafıza durumu
+        h_durum = self.hafiza.durum_ozeti()
+        self._gui_mesaj("sistem", f"✅ Hafıza sistemi hazır (Epizodik: {h_durum['epizodik_oturum']} oturum)")
 
-        # 5) Kullanici tanima
-        if self.kullanici_adi:
-            print(f"\n5) Kullanici: {self.kullanici_adi}")
+        # 5. Güncelleme kontrolü
+        self._gui_durum("Güncelleme kontrol ediliyor...")
+        threading.Thread(target=self._guncelleme_kontrol, daemon=True).start()
+
+        # 6. TTS ön bellek bekle
+        self._gui_durum("TTS ön bellek hazırlanıyor...")
+        self.konusma.on_bellek_hazir.wait(timeout=15)
+
+        # TÜMLKONTROLLER BAŞARILI
+        surum = self.config.get("version", "8.0")
+        self._gui_mesaj("sistem", f"🧠 Tüm kontroller başarılı! ATLAS v{surum} hazır.")
+        self._gui_surum(surum)
+
+        # 7. İlk tanışma veya karşılama
+        if not self.kimlik.kullanici_tanimli_mi():
+            self._ilk_tanisma()
         else:
-            print(f"\n5) Ilk kullanim - kullanici adi sorulacak")
-            self.isim_bekleniyor = True
+            self._karsilama()
 
-        print(f"\n[OK] Tum kontroller basarili! (v7.6 - 3 Katmanli Mimari)\n")
+        # 8. Ana döngüyü başlat
+        self._ana_dongu_thread = threading.Thread(target=self._ana_dongu, daemon=True)
+        self._ana_dongu_thread.start()
+
         return True
 
-    def _ollama_kontrol(self):
-        if self.config.get("ai_motor") != "gemini":
-            return
-        try:
-            import subprocess
-            result = subprocess.run(
-                ["tasklist", "/FI", "IMAGENAME eq ollama.exe"],
-                capture_output=True, text=True, timeout=5
-            )
-            if "ollama.exe" in result.stdout.lower():
-                print("\n[!] UYARI: Ollama arka planda calisiyor (~4GB RAM kullaniyor)")
-                print("    Gemini kullandiginiz icin Ollama'ya gerek yok.")
-                print("    RAM tasarrufu icin: taskkill /f /im ollama.exe")
-        except:
-            pass
+    def _ilk_tanisma(self):
+        """İlk kez çalışıyor — kullanıcıdan adını öğren"""
+        from dikkat_filtresi import DikkatModu
 
+        self._gui_durum("İlk tanışma — isim öğrenme")
+        self._gui_mod("isim")
+        self.dikkat.mod = DikkatModu.ISIM_OGRENME
 
-def gui_baslat(asistan):
-    from PyQt6.QtWidgets import QApplication
-    from arayuz import JarvisPencere
+        karsilama = "Merhaba! Ben ATLAS, senin kişisel yapay zeka asistanınım. Seninle tanışmak istiyorum. Adın ne?"
+        self._gui_mesaj("asistan", karsilama)
+        self.konusma.konus(karsilama)
 
-    app = QApplication(sys.argv)
-    app.setStyle("Fusion")
-    pencere = JarvisPencere(asistan)
-    pencere.show()
-    sys.exit(app.exec())
+        # İsim dinle (3 deneme)
+        for deneme in range(3):
+            self._gui_durum(f"İsim bekleniyor... (deneme {deneme + 1}/3)")
+            isim, guven = self.dil.isim_dinle(timeout=10)
 
+            if isim and guven > 0.4:
+                # İsmi onayla
+                onay_mesaj = f"Adın {isim}, doğru mu?"
+                self._gui_mesaj("kullanici", f"[İsim: {isim} (güven: {guven:.0%})]")
+                self._gui_mesaj("asistan", onay_mesaj)
+                self.konusma.konus(onay_mesaj)
 
-def konsol_baslat(asistan):
-    LOGO = r"""
-================================================
-       SESLI AI ASISTAN v7.6
-  3 Katmanli Akilli Mimari
-  Yerel + Gemini + Hizli TTS
-  Kullanici Tanima + Otomatik Guncelleme
-================================================
-"""
-    print(LOGO)
+                # Onay dinle
+                self._gui_durum("Onay bekleniyor...")
+                onay_audio = self.ses.dinle(timeout=5)
+                if onay_audio:
+                    onay_text = self.ses.stt_google(onay_audio)
+                    if onay_text:
+                        onay_lower = onay_text.lower()
+                        if any(k in onay_lower for k in ["evet", "doğru", "tamam", "aynen", "yes"]):
+                            # İsim onaylandı
+                            self.kimlik.kullanici_kaydet(isim)
+                            self.config.setdefault("kullanici", {})["ad"] = isim
+                            config_kaydet(self.config)
 
-    if not asistan.baslangic_kontrolleri():
-        print("\n[HATA] Baslangic kontrolleri basarisiz.")
-        input("\nCikmak icin Enter'a basin...")
-        return
+                            tebrik = f"Memnun oldum {isim}! Bana istediğin zaman 'Atlas' diye seslenebilirsin."
+                            self._gui_mesaj("asistan", tebrik)
+                            self.konusma.konus(tebrik)
+                            self.dikkat.mod = DikkatModu.AKTIF
+                            self._gui_mod("aktif")
+                            return
+                        elif any(k in onay_lower for k in ["hayır", "yanlış", "değil"]):
+                            tekrar = "Pardon, tekrar söyler misin? Adın ne?"
+                            self._gui_mesaj("asistan", tekrar)
+                            self.konusma.konus(tekrar)
+                            continue
 
-    # Kullanici tanima
-    if asistan.isim_bekleniyor:
-        asistan.sesli_yanit.konus("Merhaba! Ben senin sesli asistaninim. Adini ogrenebilir miyim?")
-        time.sleep(1.5)  # Hoparlor yankisi dusmesin
-        print("\n[*] Adinizi soyleyin...")
-        # 3 deneme hakki
-        yanki = ["merhaba", "asistan", "ogrenebilir", "yardimci", "miyim", "hello", "sesli"]
-        for _deneme in range(3):
-            isim_ham = asistan.ses_tanima.dinle_ve_cevir()
-            if isim_ham:
-                # Yanki filtresi
-                if any(k in isim_ham.lower() for k in yanki):
-                    print(f"[!] Yanki algilandi: '{isim_ham}', tekrar soruluyor...")
-                    asistan.sesli_yanit.konus("Adini net duyamadim. Sadece adini soyler misin?")
-                    time.sleep(1.0)
+                # Onay alınamadı — yine de kaydet
+                self.kimlik.kullanici_kaydet(isim)
+                self.config.setdefault("kullanici", {})["ad"] = isim
+                config_kaydet(self.config)
+
+                mesaj = f"Tamam {isim}, memnun oldum! Bana 'Atlas' diye seslenebilirsin."
+                self._gui_mesaj("asistan", mesaj)
+                self.konusma.konus(mesaj)
+                self.dikkat.mod = DikkatModu.AKTIF
+                self._gui_mod("aktif")
+                return
+
+        # 3 denemede isim alınamadı
+        self._gui_mesaj("asistan", "Şu an adını anlayamadım ama sorun değil. Daha sonra tekrar deneriz. Bana 'Atlas' diye seslenebilirsin!")
+        self.konusma.konus("Şu an adını anlayamadım ama sorun değil. Bana Atlas diye seslenebilirsin!")
+        self.dikkat.mod = DikkatModu.AKTIF
+        self._gui_mod("aktif")
+
+    def _karsilama(self):
+        """Tanınan kullanıcıyı karşıla"""
+        from dikkat_filtresi import DikkatModu
+
+        ad = self.kimlik.kullanici_adi()
+        saat = datetime.now().hour
+
+        if saat < 6:
+            selamlama = f"İyi geceler {ad}! Geç saatte mi çalışıyorsun?"
+        elif saat < 12:
+            selamlama = f"Günaydın {ad}! ATLAS hazır, seni dinliyorum."
+        elif saat < 18:
+            selamlama = f"İyi günler {ad}! ATLAS hazır, nasıl yardımcı olabilirim?"
+        else:
+            selamlama = f"İyi akşamlar {ad}! ATLAS hazır, seni dinliyorum."
+
+        self._gui_mesaj("asistan", selamlama)
+        self.konusma.konus(selamlama)
+        self.dikkat.mod = DikkatModu.AKTIF
+        self._gui_mod("aktif")
+
+    def _ana_dongu(self):
+        """Ana dinleme döngüsü"""
+        from dikkat_filtresi import DikkatModu
+
+        logger.info("Ana döngü başladı")
+
+        while self._calisiyor:
+            try:
+                # Durum güncelle
+                mod = self.dikkat.mod
+                self._gui_durum("🎙️ Dinleniyor..." if mod in (DikkatModu.AKTIF, DikkatModu.PASIF) else "Bekliyor...")
+                self._gui_mod(mod.value)
+                self._gui_bellek(self.hafiza.durum_ozeti())
+
+                # Dinle
+                sonuc = self.dil.dinle_ve_anla()
+
+                if not sonuc["basarili"]:
                     continue
-                # Turkce isim veritabani ile eslestir
-                isim_sonuc, kesinlik = isim_temizle_ve_duzelt(isim_ham)
-                if isim_sonuc and len(isim_sonuc) >= 2:
-                    asistan.hafiza.kullanici_adi_kaydet(isim_sonuc)
-                    asistan.kullanici_adi = isim_sonuc
-                    asistan.yapay_zeka.kullanici_adi = isim_sonuc
-                    asistan.isim_bekleniyor = False
-                    print(f"[OK] Isim kaydedildi: {isim_sonuc} ({kesinlik})")
-                    asistan.sesli_yanit.konus(f"Memnun oldum {isim_sonuc}! Sana nasil yardimci olabilirim?")
-                    break
-                else:
-                    print(f"[!] Isim anlasilamadi: '{isim_ham}'")
-                    asistan.sesli_yanit.konus("Adini net duyamadim. Sadece adini soyler misin?")
-                    time.sleep(1.0)
-            else:
-                asistan.sesli_yanit.konus("Duyamadim, tekrar soyler misin?")
-                time.sleep(1.0)
-        else:
-            asistan.sesli_yanit.konus("Sorun degil, daha sonra adimi degistir diyebilirsin.")
-            asistan.isim_bekleniyor = False
-    else:
-        asistan.sesli_yanit.konus(f"Merhaba {asistan.kullanici_adi}! Seni dinliyorum.")
 
-    while True:
+                metin = sonuc["duzeltilmis"]
+                if not metin:
+                    continue
+
+                # Dikkat filtresi — RAS
+                filtre = self.dikkat.filtrele(metin)
+                islem = filtre["islem"]
+                temiz_metin = filtre["metin"]
+
+                logger.info(f"RAS: islem={islem}, metin='{temiz_metin}'")
+
+                if islem == "yoksay":
+                    continue
+
+                if islem == "isim_cevap":
+                    # İsim öğrenme modunda — main logic'te halledilir
+                    continue
+
+                if islem == "tetik":
+                    # Sadece "Atlas" dedi — yanıt ver
+                    self._gui_mesaj("kullanici", metin)
+                    ad = self.kimlik.kullanici_adi()
+                    tetik_yanit = f"Evet {ad}, buradayım! Seni dinliyorum." if ad else "Evet, buradayım! Seni dinliyorum."
+                    self._gui_mesaj("asistan", tetik_yanit)
+                    self._gui_mod("aktif")
+                    self.konusma.on_bellekten_konus(tetik_yanit)
+                    continue
+
+                if islem in ("komut", "tetik_komut"):
+                    # Komutu işle
+                    self._komut_isle(sonuc["ham_metin"], temiz_metin, sonuc["niyet"])
+
+            except Exception as e:
+                logger.error(f"Ana döngü hatası: {e}", exc_info=True)
+                time.sleep(1)
+
+    def _komut_isle(self, ham, metin, niyet):
+        """Bir komutu işle — tam beyin pipeline'ı"""
+        from dikkat_filtresi import DikkatModu
+
+        # GUI: kullanıcı mesajı
+        self._gui_mesaj("kullanici", ham)
+        self._gui_durum("💭 Düşünüyor...")
+        self._gui_mod("mesgul")
+        self.dikkat.mod = DikkatModu.MESGUL
+
+        # 1. Duygu analizi (Amigdala)
+        duygu_sonucu = self.duygu.analiz_et(metin)
+        self._gui_duygu(duygu_sonucu.get("duygu", "notr"))
+
+        # 2. Hafızaya kaydet
+        niyet_adi = niyet.get("niyet") if niyet else None
+        self.hafiza.kullanici_soyledi(metin, niyet_adi, duygu_sonucu.get("duygu"))
+
+        # 3. Karar merkezi (Prefrontal Korteks — Sistem 1 veya 2)
+        karar = self.karar.karar_ver(metin, niyet, duygu_sonucu)
+        yanit = karar["yanit"]
+        yol = karar["yol"]
+
+        # 4. Duygu uyumu (Amigdala feedback)
+        yanit = self.duygu.yanit_tonu_ayarla(yanit, duygu_sonucu)
+
+        # 5. Kişilik uyumu (Ayna Nöronlar)
+        self.kisilik.etkilesim_kaydet(metin, niyet)
+        yanit = self.kisilik.yanit_ayarla(yanit)
+
+        # 6. Hafızaya kaydet
+        self.hafiza.asistan_soyledi(yanit, niyet_adi)
+
+        # 7. GUI: asistan yanıtı
+        yol_emoji = {"sistem1": "⚡", "sistem2": "🧠", "fallback": "🔄"}.get(yol, "")
+        self._gui_mesaj("asistan", yanit)
+        self._gui_durum(f"{yol_emoji} {yol} ({karar['sure_ms']:.0f}ms)")
+        self._gui_mod("aktif")
+        self._gui_bellek(self.hafiza.durum_ozeti())
+
+        # 8. Konuş (Broca alanı)
+        self.dikkat.mod = DikkatModu.MESGUL  # Konuşurken yeni girdi alma
+        self.konusma.konus(yanit)
+
+        # 9. Tekrar aktif moda geç
+        self.dikkat.mod = DikkatModu.AKTIF
+        self._gui_durum("🎙️ Dinleniyor...")
+        self._gui_mod("aktif")
+
+    def _guncelleme_kontrol(self):
+        """Arka planda güncelleme kontrolü"""
         try:
-            metin = asistan.ses_tanima.dinle_ve_cevir()
-            if metin:
-                from yapay_zeka import turkce_normalize
-                metin_kucuk = turkce_normalize(metin.lower().strip())
-                cikis = ["kapat kendini", "kendini kapat", "cikis", "gule gule"]
-                if any(k in metin_kucuk for k in cikis):
-                    asistan.sesli_yanit.konus("Gorusmek uzere!")
-                    break
-                _isle(asistan, metin)
-        except KeyboardInterrupt:
-            asistan.sesli_yanit.konus("Gorusmek uzere!")
-            break
+            if self.guncelleyici.kontrol_et():
+                durum = self.guncelleyici.guncelleme_durumu
+                self._gui_mesaj("sistem", f"🔄 {durum}")
+            else:
+                logger.debug("Güncelleme yok, güncel sürüm")
         except Exception as e:
-            print(f"[HATA] {e}")
-            time.sleep(1)
+            logger.debug(f"Güncelleme kontrol hatası: {e}")
+
+        # Periyodik kontrolü başlat
+        self.guncelleyici.periyodik_kontrol_baslat()
+
+    def durdur(self):
+        """ATLAS'ı durdur"""
+        self._calisiyor = False
+        self.hafiza.oturum_kapat()
+        self.ses.durdur()
+        self.konusma.temizle()
+        logger.info("ATLAS durduruldu")
+
+    # ── GUI Yardımcıları ──
+
+    def _gui_mesaj(self, rol, mesaj):
+        if self.arayuz:
+            self.arayuz.mesaj_ekle.emit(rol, mesaj)
+        logger.info(f"[{rol}] {mesaj}")
+
+    def _gui_durum(self, durum):
+        if self.arayuz:
+            self.arayuz.durum_guncelle.emit(durum)
+
+    def _gui_mod(self, mod):
+        if self.arayuz:
+            self.arayuz.mod_guncelle.emit(mod)
+
+    def _gui_bellek(self, durum):
+        if self.arayuz:
+            self.arayuz.bellek_guncelle.emit(durum)
+
+    def _gui_hata(self, hata):
+        if self.arayuz:
+            self.arayuz.hata_goster.emit(hata)
+
+    def _gui_surum(self, surum):
+        if self.arayuz:
+            self.arayuz.surum_goster.emit(surum)
+
+    def _gui_duygu(self, duygu):
+        if self.arayuz:
+            self.arayuz.duygu_guncelle.emit(duygu)
 
 
-def _isle(asistan, metin):
-    baslangic = time.time()
-
-    hafiza_ozeti = asistan.hafiza.hafiza_ozeti()
-    t0 = time.time()
-    yanit = asistan.yapay_zeka.komut_isle(metin, hafiza_ozeti)
-    ai_sure = time.time() - t0
-
-    if not yanit:
-        asistan.sesli_yanit.konus("Anlayamadim, tekrar soyler misin?")
-        return
-
-    # Aksiyonlari calistir
-    t1 = time.time()
-    aksiyonlar = yanit.get("aksiyonlar", [])
-    basarili = True
-    for aksiyon in aksiyonlar:
-        fonk = aksiyon.get("fonksiyon")
-        params = aksiyon.get("parametreler", {})
-        if fonk:
-            ok, sonuc = asistan.bilgisayar.calistir(fonk, params)
-            if not ok:
-                basarili = False
-    aksiyon_sure = time.time() - t1
-
-    # Hafiza guncelle
-    ogrenme = yanit.get("ogren")
-    if ogrenme and isinstance(ogrenme, dict):
-        for k, v in ogrenme.items():
-            asistan.hafiza.ogren(k, v)
-    asistan.hafiza.gecmis_ekle(metin, str(aksiyonlar), basarili)
-
-    # Isim degistirme komutu
-    yanit_metni = yanit.get("yanit", "Tamam!")
-    if yanit_metni == "__ISIM_DEGISTIR__":
-        asistan.sesli_yanit.konus("Tabii! Adini soyler misin?")
-        print("\n[*] Adinizi soyleyin...")
-        isim_ham = asistan.ses_tanima.dinle_ve_cevir()
-        if isim_ham:
-            isim_sonuc, kesinlik = isim_temizle_ve_duzelt(isim_ham)
-            isim = isim_sonuc if isim_sonuc else isim_ham.strip().title()
-            asistan.hafiza.kullanici_adi_kaydet(isim)
-            asistan.kullanici_adi = isim
-            asistan.yapay_zeka.kullanici_adi = isim
-            asistan.sesli_yanit.konus(f"Memnun oldum {isim}! Seni hatirlayacagim.")
-        else:
-            asistan.sesli_yanit.konus("Duyamadim, daha sonra tekrar dene.")
-        return
-
-    # Sesli yanit
-    t2 = time.time()
-    asistan.sesli_yanit.konus(yanit_metni)
-    tts_sure = time.time() - t2
-
-    toplam = time.time() - baslangic
-    print(f"[SURE] AI:{ai_sure:.1f}s + Aksiyon:{aksiyon_sure:.1f}s + TTS:{tts_sure:.1f}s = Toplam:{toplam:.1f}s")
-
+# ============================================================
+# ANA GİRİŞ NOKTASI
+# ============================================================
 
 def main():
-    print("Sesli AI Asistan v7.6 baslatiliyor...")
-    asistan = SesliAsistan()
+    """ATLAS başlat"""
+    # Config yükle
+    config = config_yukle()
+    logging_ayarla(config.get("sistem", {}).get("log_seviyesi", "INFO"))
+    logger.info("=" * 50)
+    logger.info(f"ATLAS v{config.get('version', '?')} başlatılıyor")
+    logger.info("=" * 50)
 
-    gui_var = True
-    try:
-        from PyQt6.QtWidgets import QApplication
-    except ImportError:
-        gui_var = False
-        print("[!] PyQt6 bulunamadi, konsol modunda baslatiliyor...")
+    # PyQt6 uygulama
+    from PyQt6.QtWidgets import QApplication
+    from arayuz import AtlasArayuz
 
-    if "--konsol" in sys.argv:
-        gui_var = False
+    app = QApplication(sys.argv)
+    app.setApplicationName("ATLAS")
 
-    if gui_var:
-        gui_baslat(asistan)
-    else:
-        konsol_baslat(asistan)
+    # Arayüz oluştur
+    pencere = AtlasArayuz()
+    pencere.show()
+
+    # Beyin oluştur ve başlat
+    beyin = AtlasBeyin(config, pencere.sinyaller)
+
+    def baslat_thread():
+        time.sleep(0.5)  # GUI'nin çizmesini bekle
+        beyin.baslat()
+
+    threading.Thread(target=baslat_thread, daemon=True).start()
+
+    # Kapanışta temizlik
+    def kapanista():
+        beyin.durdur()
+
+    app.aboutToQuit.connect(kapanista)
+
+    # Uygulama döngüsü
+    sys.exit(app.exec())
 
 
 if __name__ == "__main__":
