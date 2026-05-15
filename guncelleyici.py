@@ -1,225 +1,184 @@
 """
-Otomatik Guncelleme Modulu v6.0
-- GitHub'dan otomatik guncelleme kontrolu
-- Dosya bazli guncelleme (sadece degisen dosyalar indirilir)
-- Yedekleme + geri alma destegi
+ATLAS - Otomatik Güncelleyici
+==============================
+Görev: GitHub releases'den otomatik güncelleme kontrolü ve uygulama
+
+Asistan açıldığında ve periyodik olarak güncelleme kontrol eder.
+Yeni sürüm varsa dosyaları günceller ve yeniden başlatma önerir.
 """
+
 import json
 import os
 import sys
-import shutil
-import urllib.request
-import hashlib
 import time
+import zipfile
+import shutil
+import logging
+import threading
+import requests
+
+logger = logging.getLogger("ATLAS.guncelleme")
+
+CONFIG_DOSYA = "config.json"
 
 
 class Guncelleyici:
-    def __init__(self, config):
-        self.surum = config.get("surum", "6.0")
-        self.repo = config.get("guncelleme_repo", "")
-        self.guncelleme_url = config.get("guncelleme_url", "")
-        self.otomatik_guncelle = config.get("otomatik_guncelle", True)
-        self.uygulama_klasoru = os.path.dirname(os.path.abspath(__file__))
-        self.yedek_klasoru = os.path.join(self.uygulama_klasoru, "_yedek")
+    """GitHub releases tabanlı otomatik güncelleyici"""
 
-    def baslangicta_kontrol(self):
-        """Baslangicta guncelleme kontrolu yap"""
-        print("[*] Guncelleme kontrol ediliyor...")
+    def __init__(self, config=None):
+        config = config or {}
+        sistem = config.get("sistem", {})
+        self._repo = sistem.get("github_repo", "ozz1979/sesli-asistan")
+        self._aktif = sistem.get("guncelleme_kontrol", True)
+        self._mevcut_surum = config.get("version", "0.0")
+        self._kontrol_araligi = 3600  # 1 saat
+        self._timer = None
 
-        # 1) GitHub repo kontrolu
-        if self.repo:
-            self._github_kontrol()
-            return
+        # Durum
+        self.guncelleme_var = False
+        self.yeni_surum = ""
+        self.guncelleme_durumu = ""
 
-        # 2) Direkt URL kontrolu
-        if self.guncelleme_url:
-            self._url_kontrol()
-            return
+    def kontrol_et(self):
+        """GitHub'da yeni sürüm var mı kontrol et"""
+        if not self._aktif:
+            return False
 
-        # 3) Repo/URL yoksa atla
-        print("[!] Guncelleme deposu ayarlanmamis (opsiyonel)")
-
-    def _github_kontrol(self):
-        """GitHub releases'tan guncelleme kontrolu"""
         try:
-            url = f"https://api.github.com/repos/{self.repo}/releases/latest"
-            req = urllib.request.Request(url, headers={"User-Agent": "SesliAsistan/6.0"})
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read().decode())
-                son_surum = data.get("tag_name", "").lstrip("v")
+            url = f"https://api.github.com/repos/{self._repo}/releases/latest"
+            r = requests.get(url, timeout=10)
+            if r.status_code != 200:
+                logger.debug(f"GitHub API hatası: {r.status_code}")
+                return False
 
-                if not son_surum:
-                    return
+            data = r.json()
+            tag = data.get("tag_name", "").lstrip("v")
 
-                if self._surum_karsilastir(son_surum, self.surum) > 0:
-                    print(f"\n{'='*50}")
-                    print(f"  YENI SURUM MEVCUT: v{son_surum}")
-                    print(f"  Mevcut surum: v{self.surum}")
-                    print(f"{'='*50}")
+            if self._surum_karsilastir(tag, self._mevcut_surum) > 0:
+                self.guncelleme_var = True
+                self.yeni_surum = tag
+                logger.info(f"Yeni sürüm bulundu: v{tag} (mevcut: v{self._mevcut_surum})")
 
-                    if self.otomatik_guncelle:
-                        # Otomatik guncelle
-                        assets = data.get("assets", [])
-                        zip_asset = None
-                        for asset in assets:
-                            if asset["name"].endswith(".zip"):
-                                zip_asset = asset
-                                break
+                # ZIP dosyasını bul
+                assets = data.get("assets", [])
+                for asset in assets:
+                    if asset["name"].endswith(".zip"):
+                        return self._guncelle(asset["browser_download_url"], tag)
 
-                        if zip_asset:
-                            print(f"[*] Otomatik guncelleme indiriliyor...")
-                            self._indir_ve_guncelle(zip_asset["browser_download_url"])
-                        else:
-                            print(f"    Manuel indirme: {data.get('html_url', '')}")
-                    else:
-                        print(f"    Indirmek icin: {data.get('html_url', '')}")
-                        print(f"    Otomatik guncelleme icin config.json'da")
-                        print(f"    'otomatik_guncelle': true yapin")
-                else:
-                    print(f"[OK] Guncel surum kullaniliyor (v{self.surum})")
+                logger.warning("Release'de ZIP dosyası bulunamadı")
+                return False
+            else:
+                logger.debug(f"Güncel sürüm: v{self._mevcut_surum}")
+                return False
 
-        except urllib.error.URLError:
-            print("[!] Guncelleme sunucusuna ulasilamadi (internet?)")
         except Exception as e:
-            print(f"[!] Guncelleme kontrolu basarisiz: {e}")
+            logger.error(f"Güncelleme kontrol hatası: {e}")
+            return False
 
-    def _url_kontrol(self):
-        """Direkt URL'den versiyon kontrolu"""
+    def _surum_karsilastir(self, s1, s2):
+        """Sürüm numaralarını karşılaştır. >0: s1 daha yeni"""
         try:
-            req = urllib.request.Request(
-                self.guncelleme_url,
-                headers={"User-Agent": "SesliAsistan/6.0"}
-            )
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read().decode())
-                son_surum = data.get("surum", "")
-                if son_surum and self._surum_karsilastir(son_surum, self.surum) > 0:
-                    print(f"[!] Yeni surum mevcut: v{son_surum}")
-                    indirme_url = data.get("indirme_url", "")
-                    if indirme_url and self.otomatik_guncelle:
-                        self._indir_ve_guncelle(indirme_url)
-                    elif indirme_url:
-                        print(f"    Indirme: {indirme_url}")
-                else:
-                    print(f"[OK] Guncel surum (v{self.surum})")
-        except:
-            pass
+            p1 = [int(x) for x in str(s1).split(".")]
+            p2 = [int(x) for x in str(s2).split(".")]
+            # Eşit uzunluğa getir
+            max_len = max(len(p1), len(p2))
+            p1.extend([0] * (max_len - len(p1)))
+            p2.extend([0] * (max_len - len(p2)))
+            for a, b in zip(p1, p2):
+                if a > b: return 1
+                if a < b: return -1
+            return 0
+        except Exception:
+            return 0
 
-    def _indir_ve_guncelle(self, url):
-        """ZIP dosyasini indir ve guncelle"""
+    def _guncelle(self, zip_url, yeni_surum):
+        """ZIP indir, dosyaları güncelle"""
         try:
-            import zipfile
-            import tempfile
+            self.guncelleme_durumu = "İndiriliyor..."
+            logger.info(f"Güncelleme indiriliyor: {zip_url}")
 
-            # Indir
-            gecici = os.path.join(tempfile.gettempdir(), "sesli-asistan-update.zip")
-            print(f"[*] Indiriliyor: {url[:60]}...")
-            urllib.request.urlretrieve(url, gecici)
-            print(f"[OK] Indirildi!")
+            # İndir
+            r = requests.get(zip_url, timeout=60, stream=True)
+            if r.status_code != 200:
+                self.guncelleme_durumu = "İndirme hatası"
+                return False
 
-            # Yedekle
-            self._yedekle()
+            zip_dosya = "guncelleme.zip"
+            with open(zip_dosya, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    f.write(chunk)
 
-            # Cikar
-            print("[*] Dosyalar guncelleniyor...")
-            with zipfile.ZipFile(gecici, 'r') as zf:
-                # ZIP icindeki dosyalari bul
-                dosyalar = [f for f in zf.namelist()
-                           if f.endswith(('.py', '.bat', '.md', '.txt'))
-                           and not f.startswith('__')
-                           and '/' not in f]  # sadece kok dizin
+            self.guncelleme_durumu = "Kuruluyor..."
 
-                guncellenen = 0
-                for dosya in dosyalar:
-                    # config.json ve hafiza.json'u GUNCELLEME
-                    if dosya in ['config.json', 'hafiza.json']:
-                        continue
-                    hedef = os.path.join(self.uygulama_klasoru, dosya)
-                    icerik = zf.read(dosya)
-                    # Sadece degismis dosyalari guncelle
-                    if os.path.exists(hedef):
-                        mevcut = open(hedef, 'rb').read()
-                        if mevcut == icerik:
-                            continue
-                    with open(hedef, 'wb') as f:
-                        f.write(icerik)
-                    guncellenen += 1
-                    print(f"   [+] {dosya}")
+            # Mevcut config'i yedekle (API key korunmalı)
+            mevcut_config = {}
+            if os.path.exists(CONFIG_DOSYA):
+                with open(CONFIG_DOSYA, 'r', encoding='utf-8') as f:
+                    mevcut_config = json.load(f)
 
-            # Temizle
+            # ZIP'i aç
+            gecici_dir = "guncelleme_gecici"
+            with zipfile.ZipFile(zip_dosya, 'r') as z:
+                z.extractall(gecici_dir)
+
+            # Dosyaları kopyala
+            kaynak_dir = gecici_dir
+            # ZIP içinde tek klasör varsa onu kullan
+            icerik = os.listdir(gecici_dir)
+            if len(icerik) == 1 and os.path.isdir(os.path.join(gecici_dir, icerik[0])):
+                kaynak_dir = os.path.join(gecici_dir, icerik[0])
+
+            korunan_dosyalar = {"hafiza", "ses_cache", "atlas.log", "guncelleme.zip",
+                                "guncelleme_gecici", "venv", "__pycache__"}
+
+            for dosya in os.listdir(kaynak_dir):
+                if dosya in korunan_dosyalar:
+                    continue
+                kaynak = os.path.join(kaynak_dir, dosya)
+                hedef = dosya
+                if os.path.isfile(kaynak):
+                    shutil.copy2(kaynak, hedef)
+                    logger.info(f"Güncellendi: {dosya}")
+
+            # Config'i güncelle — API key'i koru
+            if os.path.exists(CONFIG_DOSYA):
+                with open(CONFIG_DOSYA, 'r', encoding='utf-8') as f:
+                    yeni_config = json.load(f)
+                # Eski config'den korunacak değerleri aktar
+                if mevcut_config.get("ai", {}).get("gemini_api_key"):
+                    yeni_config.setdefault("ai", {})["gemini_api_key"] = \
+                        mevcut_config["ai"]["gemini_api_key"]
+                if mevcut_config.get("kullanici", {}).get("ad"):
+                    yeni_config.setdefault("kullanici", {})["ad"] = \
+                        mevcut_config["kullanici"]["ad"]
+                yeni_config["version"] = yeni_surum
+                with open(CONFIG_DOSYA, 'w', encoding='utf-8') as f:
+                    json.dump(yeni_config, f, ensure_ascii=False, indent=4)
+
+            # Temizlik
             try:
-                os.remove(gecici)
-            except:
+                os.remove(zip_dosya)
+                shutil.rmtree(gecici_dir, ignore_errors=True)
+            except Exception:
                 pass
 
-            if guncellenen > 0:
-                # config.json'daki surum numarasini guncelle
-                try:
-                    config_yolu = os.path.join(self.uygulama_klasoru, "config.json")
-                    with open(config_yolu, "r", encoding="utf-8") as f:
-                        config = json.load(f)
-                    # ZIP icindeki config'den surum al
-                    if "config.json" in zf.namelist():
-                        yeni_config = json.loads(zf.read("config.json").decode("utf-8"))
-                        yeni_surum = yeni_config.get("surum", "")
-                        if yeni_surum:
-                            config["surum"] = yeni_surum
-                            with open(config_yolu, "w", encoding="utf-8") as f:
-                                json.dump(config, f, ensure_ascii=False, indent=4)
-                            print(f"   [+] Surum guncellendi: v{yeni_surum}")
-                except Exception as e2:
-                    print(f"   [!] Surum guncelleme hatasi: {e2}")
-
-                print(f"\n[OK] {guncellenen} dosya guncellendi!")
-                print("[!] Degisikliklerin aktif olmasi icin programi yeniden baslatin.")
-            else:
-                print("[OK] Tum dosyalar zaten guncel.")
+            self.guncelleme_durumu = f"v{yeni_surum} kuruldu! Yeniden başlatma önerilir."
+            self._mevcut_surum = yeni_surum
+            logger.info(f"Güncelleme tamamlandı: v{yeni_surum}")
+            return True
 
         except Exception as e:
-            print(f"[HATA] Guncelleme basarisiz: {e}")
-            self._geri_al()
+            self.guncelleme_durumu = f"Güncelleme hatası: {e}"
+            logger.error(f"Güncelleme hatası: {e}")
+            return False
 
-    def _yedekle(self):
-        """Mevcut dosyalari yedekle"""
-        try:
-            os.makedirs(self.yedek_klasoru, exist_ok=True)
-            for dosya in os.listdir(self.uygulama_klasoru):
-                if dosya.endswith('.py') and dosya != '__pycache__':
-                    kaynak = os.path.join(self.uygulama_klasoru, dosya)
-                    hedef = os.path.join(self.yedek_klasoru, dosya)
-                    shutil.copy2(kaynak, hedef)
-        except Exception as e:
-            print(f"[!] Yedekleme hatasi: {e}")
+    def periyodik_kontrol_baslat(self):
+        """Arka planda periyodik güncelleme kontrolü başlat"""
+        def kontrol_dongusu():
+            while self._aktif:
+                self.kontrol_et()
+                time.sleep(self._kontrol_araligi)
 
-    def _geri_al(self):
-        """Yedekten geri al"""
-        if not os.path.exists(self.yedek_klasoru):
-            return
-        try:
-            print("[*] Yedekten geri aliniyor...")
-            for dosya in os.listdir(self.yedek_klasoru):
-                kaynak = os.path.join(self.yedek_klasoru, dosya)
-                hedef = os.path.join(self.uygulama_klasoru, dosya)
-                shutil.copy2(kaynak, hedef)
-            print("[OK] Geri alindi!")
-        except Exception as e:
-            print(f"[HATA] Geri alma basarisiz: {e}")
-
-    def _surum_karsilastir(self, a, b):
-        """Surum karsilastir: a > b ise 1, esit 0, kucuk -1"""
-        try:
-            pa = [int(x) for x in a.split(".")]
-            pb = [int(x) for x in b.split(".")]
-            # Uzunluk esitle
-            while len(pa) < len(pb):
-                pa.append(0)
-            while len(pb) < len(pa):
-                pb.append(0)
-            for i in range(len(pa)):
-                if pa[i] > pb[i]:
-                    return 1
-                elif pa[i] < pb[i]:
-                    return -1
-            return 0
-        except:
-            return 0
+        t = threading.Thread(target=kontrol_dongusu, daemon=True)
+        t.start()
+        logger.info("Periyodik güncelleme kontrolü başlatıldı")
