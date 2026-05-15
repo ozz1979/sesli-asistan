@@ -146,6 +146,16 @@ class AtlasBeyin:
         if config_ad:
             self.hafiza.kullanici_bilgisi_kaydet("ad", config_ad)
 
+        # Bilgisayar tarama bilgilerini yükle (önceki taramadan)
+        try:
+            from bilgisayar_tarama import tarama_yukle, tarama_ozeti_olustur
+            onceki = tarama_yukle()
+            if onceki:
+                ozet = tarama_ozeti_olustur(onceki)
+                self.karar.bilgisayar_bilgisi_yukle(ozet)
+        except Exception:
+            pass
+
         # ── Ses seviyesini GUI küresine bağla ──
         def ses_gui_gonder(seviye):
             if self.arayuz:
@@ -209,11 +219,15 @@ class AtlasBeyin:
         h_durum = self.hafiza.durum_ozeti()
         self._gui_mesaj("sistem", f"✅ Hafıza sistemi hazır (Epizodik: {h_durum['epizodik_oturum']} oturum)")
 
-        # 5. Güncelleme kontrolü
+        # 5. Bilgisayar taraması (arka planda)
+        self._gui_durum("Bilgisayar taranıyor...")
+        threading.Thread(target=self._bilgisayar_tara, daemon=True).start()
+
+        # 6. Güncelleme kontrolü
         self._gui_durum("Güncelleme kontrol ediliyor...")
         threading.Thread(target=self._guncelleme_kontrol, daemon=True).start()
 
-        # 6. TTS ön bellek bekle
+        # 7. TTS ön bellek bekle
         self._gui_durum("TTS ön bellek hazırlanıyor...")
         self.konusma.on_bellek_hazir.wait(timeout=15)
 
@@ -222,13 +236,13 @@ class AtlasBeyin:
         self._gui_mesaj("sistem", f"🧠 Tüm kontroller başarılı! ATLAS v{surum} hazır.")
         self._gui_surum(surum)
 
-        # 7. İlk tanışma veya karşılama
+        # 8. İlk tanışma veya karşılama
         if not self.kimlik.kullanici_tanimli_mi():
             self._ilk_tanisma()
         else:
             self._karsilama()
 
-        # 8. Ana döngüyü başlat
+        # 9. Ana döngüyü başlat
         self._ana_dongu_thread = threading.Thread(target=self._ana_dongu, daemon=True)
         self._ana_dongu_thread.start()
 
@@ -426,6 +440,46 @@ class AtlasBeyin:
         self.dikkat.mod = DikkatModu.AKTIF
         self._gui_durum("🎙️ Dinleniyor...")
         self._gui_mod("aktif")
+
+    def _bilgisayar_tara(self):
+        """Arka planda bilgisayarı tara ve hafızaya kaydet"""
+        try:
+            from bilgisayar_tarama import (
+                bilgisayar_tara, tarama_kaydet, tarama_yukle,
+                tarama_gerekli_mi, tarama_ozeti_olustur
+            )
+
+            if tarama_gerekli_mi():
+                self._gui_mesaj("sistem", "🔍 Bilgisayar taranıyor...")
+                bilgi = bilgisayar_tara()
+                tarama_kaydet(bilgi)
+
+                # Özeti AI'a yükle
+                ozet = tarama_ozeti_olustur(bilgi)
+                self.karar.bilgisayar_bilgisi_yukle(ozet)
+
+                prog_sayisi = len(bilgi.get("programlar", []))
+                sistem = bilgi.get("sistem", {})
+                ram = sistem.get("ram_toplam_gb", "?")
+                sure = bilgi.get("tarama_suresi_sn", "?")
+
+                self._gui_mesaj("sistem",
+                    f"✅ Bilgisayar tarandı ({sure}s): {prog_sayisi} program, {ram}GB RAM")
+
+                # Semantik belleğe de kaydet
+                self.hafiza.semantik.kaydet("bilgisayar", "sistem",
+                    bilgi.get("sistem", {}))
+                self.hafiza.semantik.kaydet("bilgisayar", "programlar",
+                    bilgi.get("programlar", []))
+                self.hafiza.semantik.kaydet("bilgisayar", "diskler",
+                    bilgi.get("diskler", []))
+            else:
+                logger.info("Bilgisayar taraması güncel, atlanıyor")
+                self._gui_mesaj("sistem", "✅ Bilgisayar bilgileri hafızada mevcut")
+
+        except Exception as e:
+            logger.error(f"Bilgisayar tarama hatası: {e}")
+            self._gui_mesaj("sistem", f"⚠️ Bilgisayar tarama hatası: {e}")
 
     def _guncelleme_kontrol(self):
         """Arka planda güncelleme kontrolü"""
