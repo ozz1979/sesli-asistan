@@ -14,8 +14,6 @@ NOT: sounddevice kullanır — PyAudio gerektirmez!
 import threading
 import time
 import logging
-import io
-import struct
 import numpy as np
 
 logger = logging.getLogger("ATLAS.ses")
@@ -47,12 +45,15 @@ class SesAlgilama:
         self._aktif = False
         self._lock = threading.Lock()
 
-        # Google STT için recognizer (sadece recognize_google kullanır)
+        # Google STT için recognizer
         self._recognizer = None
 
         # Durum
         self.hazir = threading.Event()
         self.hata = None
+
+        # Ses seviye callback — GUI küresine bağlanır
+        self.ses_seviye_callback = None
 
     def baslat(self):
         """Mikrofonu başlat ve kalibre et"""
@@ -60,10 +61,8 @@ class SesAlgilama:
             import sounddevice as sd
             import speech_recognition as sr
 
-            # Recognizer (sadece recognize_google için)
             self._recognizer = sr.Recognizer()
 
-            # Mikrofon cihazını kontrol et
             cihaz = sd.query_devices(kind="input")
             logger.info(f"Mikrofon: {cihaz['name']} (SR: {cihaz['default_samplerate']})")
 
@@ -75,7 +74,7 @@ class SesAlgilama:
             if test is None or len(test) == 0:
                 raise RuntimeError("Mikrofon ses kaydı yapamadı")
 
-            # Kalibrasyon — ortam gürültüsü ölç
+            # Kalibrasyon
             logger.info(f"Mikrofon kalibre ediliyor ({self._kalibrasyon_suresi}s)...")
             kalibrasyon = sd.rec(
                 int(SAMPLE_RATE * self._kalibrasyon_suresi),
@@ -85,9 +84,7 @@ class SesAlgilama:
             )
             sd.wait()
 
-            # RMS enerji hesapla
             rms = np.sqrt(np.mean(kalibrasyon.astype(np.float64) ** 2))
-            # Eşiği ortam gürültüsünün 2x üstüne ayarla
             if self._dinamik_esik:
                 self._enerji_esigi = max(rms * 2.0, 200)
             logger.info(f"Kalibrasyon tamamlandı. Ortam RMS: {rms:.0f}, Eşik: {self._enerji_esigi:.0f}")
@@ -110,6 +107,7 @@ class SesAlgilama:
         """
         Mikrofonu dinle ve ses yakala.
         Enerji tabanlı VAD — konuşma başlayınca kaydet, susunca dur.
+        Ses seviyesini gerçek zamanlı olarak GUI'ye gönderir.
         
         Returns: speech_recognition.AudioData veya None
         """
@@ -129,7 +127,6 @@ class SesAlgilama:
         sessizlik_limit = self._sessizlik_suresi
 
         try:
-            # Stream aç
             stream = sd.InputStream(
                 samplerate=SAMPLE_RATE,
                 channels=CHANNELS,
@@ -141,36 +138,36 @@ class SesAlgilama:
             while True:
                 gecen = time.time() - baslangic
 
-                # Timeout kontrolü
                 if gecen > timeout:
                     if konusma_basladi and len(buffer) > 0:
-                        break  # Topladığımızı döndür
+                        break
+                    # Timeout — küreyi sıfırla
+                    self._ses_seviye_gonder(0.0)
                     stream.stop()
                     stream.close()
                     return None
 
-                # Chunk oku
                 chunk, overflowed = stream.read(CHUNK_SIZE)
                 if overflowed:
                     logger.debug("Buffer overflow — chunk atlandı")
 
-                # RMS enerji hesapla
                 rms = np.sqrt(np.mean(chunk.astype(np.float64) ** 2))
 
+                # ── Ses seviyesini GUI küresine gönder ──
+                normalized = min(1.0, rms / max(esik * 3, 1))
+                self._ses_seviye_gonder(normalized)
+
                 if rms > esik:
-                    # Ses var!
                     if not konusma_basladi:
                         konusma_basladi = True
                         logger.debug(f"Konuşma başladı (RMS: {rms:.0f})")
                     buffer.append(chunk.copy())
                     sessizlik_baslangic = None
 
-                    # Dinamik eşik güncelle
                     if self._dinamik_esik:
                         self._enerji_esigi = self._enerji_esigi * 0.95 + rms * 0.05 * 0.5
 
                 elif konusma_basladi:
-                    # Konuşma başlamış ama şu an sessizlik
                     buffer.append(chunk.copy())
                     if sessizlik_baslangic is None:
                         sessizlik_baslangic = time.time()
@@ -181,26 +178,35 @@ class SesAlgilama:
             stream.stop()
             stream.close()
 
+            # Kayıt bitti, küreyi sıfırla
+            self._ses_seviye_gonder(0.0)
+
             if not buffer:
                 return None
 
-            # Buffer → AudioData
             ses_data = np.concatenate(buffer)
             raw_bytes = ses_data.tobytes()
-
-            # speech_recognition.AudioData oluştur
-            audio = sr.AudioData(raw_bytes, SAMPLE_RATE, 2)  # 2 = sample_width (int16)
+            audio = sr.AudioData(raw_bytes, SAMPLE_RATE, 2)
             logger.debug(f"Ses yakalandı: {len(raw_bytes)} bytes, {len(raw_bytes)/SAMPLE_RATE/2:.1f}s")
             return audio
 
         except Exception as e:
             logger.warning(f"Dinleme hatası: {e}")
+            self._ses_seviye_gonder(0.0)
             try:
                 stream.stop()
                 stream.close()
-            except:
+            except Exception:
                 pass
             return None
+
+    def _ses_seviye_gonder(self, seviye):
+        """Ses seviyesini GUI callback'ine gönder"""
+        if self.ses_seviye_callback:
+            try:
+                self.ses_seviye_callback(seviye)
+            except Exception:
+                pass
 
     def stt_google(self, audio):
         """Google Speech-to-Text ile ses → metin"""
@@ -231,7 +237,6 @@ class SesAlgilama:
         return self._aktif
 
     def esik_bilgisi(self):
-        """Mevcut enerji eşiği bilgisini döndür"""
         return {
             "enerji_esigi": self._enerji_esigi,
             "dinamik": self._dinamik_esik
