@@ -1,17 +1,17 @@
 @echo off
 chcp 65001 >nul 2>&1
-title ATLAS v8.0 - Kurulum
+title ATLAS v8.2 - Kurulum
 color 0B
 
 echo.
 echo  ╔══════════════════════════════════════════════════╗
-echo  ║          ATLAS v8.0 - Beyin Mimarisi            ║
-echo  ║          Sesli AI Asistan Kurulumu               ║
+echo  ║       ATLAS v8.2 - JARVIS Beyin Mimarisi         ║
+echo  ║       Sesli AI Asistan Kurulumu                   ║
 echo  ╚══════════════════════════════════════════════════╝
 echo.
 
 :: Python kontrolü
-echo [1/5] Python kontrol ediliyor...
+echo [1/6] Python kontrol ediliyor...
 python --version >nul 2>&1
 if errorlevel 1 (
     echo HATA: Python bulunamadi! python.org adresinden Python yukleyin.
@@ -22,7 +22,7 @@ python --version
 echo.
 
 :: Sanal ortam
-echo [2/5] Sanal ortam olusturuluyor...
+echo [2/6] Sanal ortam olusturuluyor...
 if not exist "venv" (
     python -m venv venv
     echo Sanal ortam olusturuldu.
@@ -32,7 +32,7 @@ if not exist "venv" (
 echo.
 
 :: Paketler
-echo [3/5] Paketler yukleniyor (bu biraz surebilir)...
+echo [3/6] Paketler yukleniyor (bu biraz surebilir)...
 echo.
 
 venv\Scripts\python.exe -m pip install --upgrade pip >nul 2>&1
@@ -82,19 +82,33 @@ echo   Tum paketler yuklendi!
 echo.
 
 :: Hafıza dizini
-echo [4/5] Hafiza dizini olusturuluyor...
+echo [4/6] Hafiza dizini olusturuluyor...
 if not exist "hafiza" mkdir hafiza
 if not exist "ses_cache" mkdir ses_cache
+echo   Dizinler hazir.
+echo.
+
+:: Masaüstü kısayolu
+echo [5/6] Masaustu kisayolu olusturuluyor...
+echo Set WshShell = CreateObject("WScript.Shell") > "%TEMP%\atlas_kisayol.vbs"
+echo Set Shortcut = WshShell.CreateShortcut(WshShell.SpecialFolders("Desktop") ^& "\ATLAS.lnk") >> "%TEMP%\atlas_kisayol.vbs"
+echo Shortcut.TargetPath = "%CD%\baslat.bat" >> "%TEMP%\atlas_kisayol.vbs"
+echo Shortcut.WorkingDirectory = "%CD%" >> "%TEMP%\atlas_kisayol.vbs"
+echo Shortcut.Description = "ATLAS Sesli AI Asistan" >> "%TEMP%\atlas_kisayol.vbs"
+echo Shortcut.Save >> "%TEMP%\atlas_kisayol.vbs"
+cscript //nologo "%TEMP%\atlas_kisayol.vbs" >nul 2>&1
+del "%TEMP%\atlas_kisayol.vbs" >nul 2>&1
+echo   Masaustune ATLAS kisayolu eklendi!
 echo.
 
 :: Windows başlangıcına ekleme
-echo [5/5] Windows baslangicina eklemek ister misiniz?
-set /p baslangic="  (E/H): "
+echo [6/6] Windows baslangicina eklemek ister misiniz?
+set /p baslangic="  Bilgisayar acildiginda otomatik baslasin mi? (E/H): "
 if /i "%baslangic%"=="E" (
     echo Set WshShell = CreateObject("WScript.Shell") > "%TEMP%\atlas_startup.vbs"
     echo WshShell.Run """%CD%\baslat.bat""", 0, False >> "%TEMP%\atlas_startup.vbs"
-
     copy "%TEMP%\atlas_startup.vbs" "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\atlas_startup.vbs" >nul 2>&1
+    del "%TEMP%\atlas_startup.vbs" >nul 2>&1
     echo   ATLAS Windows baslangicina eklendi!
 ) else (
     echo   Atlandi.
@@ -102,10 +116,13 @@ if /i "%baslangic%"=="E" (
 
 echo.
 echo  ╔══════════════════════════════════════════════════╗
-echo  ║         KURULUM TAMAMLANDI!                      ║
-echo  ║                                                  ║
-echo  ║  Baslatmak icin: baslat.bat                      ║
-echo  ║  API key: config.json → gemini_api_key           ║
+echo  ║            KURULUM TAMAMLANDI!                    ║
+echo  ║                                                   ║
+echo  ║  Baslatmak icin: Masaustundeki ATLAS ikonuna      ║
+echo  ║  veya baslat.bat dosyasina tiklayin.               ║
+echo  ║                                                   ║
+echo  ║  ONEMLI: config.json dosyasina                     ║
+echo  ║  Gemini API anahtarinizi yazmayi unutmayin!        ║
 echo  ╚══════════════════════════════════════════════════╝
 echo.
 pause
