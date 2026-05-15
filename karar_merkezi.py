@@ -37,6 +37,7 @@ class KararMerkezi:
         self.hafiza = hafiza
         self.duygu = duygu
         self.config = config or {}
+        self._bilgisayar_ozeti = ""  # Tarama özeti — system prompt'a eklenir
 
         ai_cfg = self.config.get("ai", {})
         self._gemini_model = ai_cfg.get("gemini_model", "gemini-2.0-flash")
@@ -138,9 +139,19 @@ class KararMerkezi:
     # SİSTEM TALİMATI
     # ══════════════════════════════════════════════════
 
+    def bilgisayar_bilgisi_yukle(self, ozet_text):
+        """Bilgisayar tarama özetini yükle — AI system prompt'a eklenecek"""
+        self._bilgisayar_ozeti = ozet_text
+        logger.info(f"Bilgisayar bilgisi yüklendi ({len(ozet_text)} karakter)")
+
     def _sistem_talimati(self):
         """AI modelleri için sistem talimatı — bilgisayar kontrol yetenekleriyle"""
-        return """Sen ATLAS adında bir Türkçe sesli asistansın. Bir insan arkadaş gibi doğal ve samimi konuşuyorsun.
+        # Bilgisayar bilgisi varsa ekle
+        bilgisayar_bolum = ""
+        if self._bilgisayar_ozeti:
+            bilgisayar_bolum = f"\n\n{self._bilgisayar_ozeti}\n"
+
+        return f"""Sen ATLAS adında bir Türkçe sesli asistansın. Bir insan arkadaş gibi doğal ve samimi konuşuyorsun.{bilgisayar_bolum}
 Bilgisayarı kontrol edebiliyorsun! Kullanıcı bir şey yapmanı istediğinde KOMUT etiketleri kullan.
 
 KONUŞMA KURALLARI:
