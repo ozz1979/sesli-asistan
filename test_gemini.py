@@ -32,7 +32,7 @@ try:
     ai = config.get("ai", {})
     api_key = ai.get("gemini_api_key", "")
     model = ai.get("gemini_model", "gemini-2.0-flash")
-    yedek_model = ai.get("gemini_yedek_model", "gemini-1.5-flash")
+    yedek_model = ai.get("gemini_yedek_model", "gemini-2.0-flash-lite")
     timeout = ai.get("timeout", 8)
 
     if api_key:
@@ -177,7 +177,7 @@ print()
 # ──────── 7. Yedek model test ────────
 if hatalar and any("429" in h for h in hatalar):
     print("[7/7] Yedek model deneniyor...")
-    yedek = config.get("ai", {}).get("gemini_yedek_model", "gemini-1.5-flash")
+    yedek = config.get("ai", {}).get("gemini_yedek_model", "gemini-2.0-flash-lite")
     try:
         if yeni_sdk:
             from google.genai import types
