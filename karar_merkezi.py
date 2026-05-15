@@ -9,7 +9,7 @@ Kahneman'ın teorisi:
 - Sistem 2 Hafif: Basit AI yanıtı → 1-3s
 - Sistem 2 Derin: Karmaşık AI + düşünme → 5-30s
 
-AI Zinciri: Gemini → DeepSeek → Ollama → Fallback
+AI Zinciri: Gemini → DeepSeek → Groq → Ollama → Fallback
 """
 
 import time
@@ -25,7 +25,7 @@ class KararMerkezi:
     """
     Prefrontal Korteks — karar verme merkezi.
     Gelen mesajı analiz edip en uygun yanıt yolunu seçer.
-    AI Zinciri: Gemini → DeepSeek → Ollama → Fallback
+    AI Zinciri: Gemini → DeepSeek → Groq → Ollama → Fallback
     """
 
     def __init__(self, kalip_motoru, hafiza, duygu, config=None):
@@ -40,6 +40,8 @@ class KararMerkezi:
         self._gemini_key = ai_cfg.get("gemini_api_key", "")
         self._deepseek_key = ai_cfg.get("deepseek_api_key", "")
         self._deepseek_model = ai_cfg.get("deepseek_model", "deepseek-chat")
+        self._groq_key = ai_cfg.get("groq_api_key", "")
+        self._groq_model = ai_cfg.get("groq_model", "llama-3.3-70b-versatile")
         self._ollama_model = ai_cfg.get("ollama_model", "llama3")
         self._ollama_url = ai_cfg.get("ollama_url", "http://localhost:11434")
         self._max_token = ai_cfg.get("max_token", 150)
@@ -48,9 +50,11 @@ class KararMerkezi:
 
         self._gemini_client = None
         self._deepseek_client = None
+        self._groq_client = None
         self._eski_sdk = False
         self._gemini_hazirla()
         self._deepseek_hazirla()
+        self._groq_hazirla()
 
         # İstatistikler
         self._istatistik = {"sistem1": 0, "sistem2_hafif": 0, "sistem2_derin": 0, "hata": 0}
@@ -108,6 +112,24 @@ class KararMerkezi:
         except Exception as e:
             logger.error(f"DeepSeek hazırlama hatası: {e}")
 
+    def _groq_hazirla(self):
+        """Groq AI client'ı hazırla — OpenAI uyumlu API"""
+        if not self._groq_key:
+            logger.info("Groq API key ayarlanmamış — atlanıyor")
+            return
+
+        try:
+            from openai import OpenAI
+            self._groq_client = OpenAI(
+                api_key=self._groq_key,
+                base_url="https://api.groq.com/openai/v1"
+            )
+            logger.info(f"Groq hazır: {self._groq_model}")
+        except ImportError:
+            logger.warning("Groq için openai paketi gerekli: pip install openai")
+        except Exception as e:
+            logger.error(f"Groq hazırlama hatası: {e}")
+
     # ══════════════════════════════════════════════════
     # SİSTEM TALİMATI
     # ══════════════════════════════════════════════════
@@ -161,11 +183,14 @@ KRİTİK KURALLAR:
         # ──── SİSTEM 2: AI Zinciri ────
         baglam = self._baglam_olustur(text, niyet, duygu_sonucu)
 
-        # Zincir: Gemini → DeepSeek → Ollama → Fallback
+        # Zincir: Gemini → DeepSeek → Groq → Ollama → Fallback
         ai_yanit = self._gemini_sor(baglam, text)
 
         if not ai_yanit:
             ai_yanit = self._deepseek_sor(baglam, text)
+
+        if not ai_yanit:
+            ai_yanit = self._groq_sor(baglam, text)
 
         if not ai_yanit:
             ai_yanit = self._ollama_sor(baglam, text)
@@ -308,7 +333,7 @@ KRİTİK KURALLAR:
         except Exception as e:
             hata_str = str(e).lower()
             if "429" in hata_str or "quota" in hata_str or "exhausted" in hata_str:
-                logger.warning("Gemini kota dolmuş — DeepSeek'e geçiliyor...")
+                logger.warning("Gemini kota dolmuş — sonraki AI'a geçiliyor...")
             else:
                 logger.error(f"Gemini hatası: {type(e).__name__}: {e}")
 
@@ -346,10 +371,49 @@ KRİTİK KURALLAR:
 
         except Exception as e:
             hata_str = str(e).lower()
-            if "429" in hata_str or "quota" in hata_str:
-                logger.warning("DeepSeek kota dolmuş — Ollama'ya geçiliyor...")
+            if "429" in hata_str or "quota" in hata_str or "402" in hata_str or "balance" in hata_str:
+                logger.warning("DeepSeek kota/bakiye sorunu — sonraki AI'a geçiliyor...")
             else:
                 logger.error(f"DeepSeek hatası: {type(e).__name__}: {e}")
+
+        return None
+
+    # ══════════════════════════════════════════════════
+    # GROQ AI (ÜCRETSİZ)
+    # ══════════════════════════════════════════════════
+
+    def _groq_sor(self, baglam, soru):
+        """Groq AI'a sor — OpenAI uyumlu API, ücretsiz"""
+        if not self._groq_client:
+            return None
+
+        prompt = f"{baglam}\n\nKullanıcı: {soru}"
+
+        try:
+            response = self._groq_client.chat.completions.create(
+                model=self._groq_model,
+                messages=[
+                    {"role": "system", "content": self._sistem_talimati()},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=self._max_token,
+                temperature=self._sicaklik,
+                timeout=self._timeout,
+            )
+
+            if response and response.choices:
+                yanit = response.choices[0].message.content
+                if yanit:
+                    yanit = self._yanit_temizle(yanit)
+                    logger.info(f"Groq yanıt: {yanit[:50]}")
+                    return yanit
+
+        except Exception as e:
+            hata_str = str(e).lower()
+            if "429" in hata_str or "rate" in hata_str:
+                logger.warning("Groq rate limit — sonraki AI'a geçiliyor...")
+            else:
+                logger.error(f"Groq hatası: {type(e).__name__}: {e}")
 
         return None
 
@@ -414,7 +478,7 @@ KRİTİK KURALLAR:
         if yanit:
             return yanit
 
-        if not self._gemini_key and not self._deepseek_key:
+        if not self._gemini_key and not self._deepseek_key and not self._groq_key:
             return "Yapay zeka bağlantım ayarlanmamış. Config dosyasındaki API anahtarlarını kontrol eder misin?"
 
         return "Şu an buna cevap veremedim. Biraz sonra tekrar dener misin?"
@@ -429,6 +493,7 @@ KRİTİK KURALLAR:
             "basarili": False,
             "gemini": {"durum": "yok", "detay": ""},
             "deepseek": {"durum": "yok", "detay": ""},
+            "groq": {"durum": "yok", "detay": ""},
             "hata": None,
             "cozum": None,
         }
@@ -476,10 +541,29 @@ KRİTİK KURALLAR:
         elif not self._deepseek_key:
             sonuc["deepseek"] = {"durum": "key_yok", "detay": "API key girilmemiş"}
 
+        # ── Groq test ──
+        if self._groq_key and self._groq_client:
+            try:
+                r = self._groq_client.chat.completions.create(
+                    model=self._groq_model,
+                    messages=[{"role": "user", "content": "Sadece 'OK' yaz."}],
+                    max_tokens=5,
+                    temperature=0.1,
+                    timeout=8,
+                )
+                if r and r.choices:
+                    sonuc["groq"] = {"durum": "ok", "detay": r.choices[0].message.content.strip()[:20]}
+                    sonuc["basarili"] = True
+            except Exception as e:
+                hata = str(e)[:100]
+                sonuc["groq"] = {"durum": "hata", "detay": hata}
+        elif not self._groq_key:
+            sonuc["groq"] = {"durum": "key_yok", "detay": "API key girilmemiş"}
+
         # Sonuç
         if not sonuc["basarili"]:
             sonuc["hata"] = "Hiçbir AI bağlantısı çalışmıyor"
-            sonuc["cozum"] = "config.json'da gemini_api_key veya deepseek_api_key girin"
+            sonuc["cozum"] = "config.json'da en az bir API key girin (gemini, deepseek veya groq)"
 
         return sonuc
 
@@ -493,6 +577,10 @@ KRİTİK KURALLAR:
             self._deepseek_key = yeni_key
             self.config.setdefault("ai", {})["deepseek_api_key"] = yeni_key
             self._deepseek_hazirla()
+        elif servis == "groq":
+            self._groq_key = yeni_key
+            self.config.setdefault("ai", {})["groq_api_key"] = yeni_key
+            self._groq_hazirla()
 
     def istatistik(self):
         return dict(self._istatistik)
