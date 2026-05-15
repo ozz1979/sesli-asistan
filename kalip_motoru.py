@@ -81,15 +81,20 @@ PROGRAM_HARITASI = {
 AC_FIILLERI = {"aç", "ac", "başlat", "baslat", "çalıştır", "calistir", "getir", "göster", "goster"}
 KAPAT_FIILLERI = {"kapat", "kapa", "sonlandır", "bitir", "durdur"}
 
-# Ses kontrol komutları
+# Ses kontrol komutları → islem adı (bilgisayar_kontrol.ses_ayarla kullanılacak)
 SES_KOMUTLARI = {
-    "sesi aç": "nircmd.exe mutesysvolume 0",
-    "sesi kapat": "nircmd.exe mutesysvolume 1",
-    "sesi kıs": "nircmd.exe changesysvolume -5000",
-    "sesi ac": "nircmd.exe mutesysvolume 0",
-    "sesi yükselt": "nircmd.exe changesysvolume 5000",
-    "sesi arttır": "nircmd.exe changesysvolume 5000",
-    "sesi azalt": "nircmd.exe changesysvolume -5000",
+    "sesi aç": "ac",
+    "sesi kapat": "kapat",
+    "sesi kıs": "azalt",
+    "sesi ac": "ac",
+    "sesi yükselt": "yukselt",
+    "sesi arttır": "yukselt",
+    "sesi azalt": "azalt",
+    "ses aç": "ac",
+    "ses kapat": "kapat",
+    "ses kıs": "azalt",
+    "ses yükselt": "yukselt",
+    "ses azalt": "azalt",
 }
 
 
@@ -349,24 +354,57 @@ class KalipMotoru:
             return yanit
 
         # ── 1. Ses komutları ──
-        for anahtar, komut in SES_KOMUTLARI.items():
+        for anahtar, islem in SES_KOMUTLARI.items():
             if anahtar in metin or turkce_normalize(anahtar) in metin_norm:
-                try:
-                    subprocess.Popen(komut, shell=True)
+                basarili, mesaj = bk.ses_ayarla(islem)
+                if basarili:
                     return f"Tamam {ad}, {anahtar}ıyorum.", "ses_kontrol", 0.95
-                except Exception:
-                    pass
+                else:
+                    return f"Ses ayarlanamadı: {mesaj}", "hata", 0.9
 
         # ── 2. Ekran görüntüsü ──
-        if any(k in metin for k in ["ekran görüntüsü", "ekran goruntusu", "screenshot", "ekran al"]):
-            basarili, mesaj = bk.ekran_goruntusu()
-            if basarili:
-                return f"{mesaj} {ad}.", "ekran_goruntusu", 0.95
+        ekran_tetik = any(k in metin for k in ["ekran görüntüsü", "ekran goruntusu", "screenshot", "ekran al"])
+        if ekran_tetik:
+            # "göster" varsa son ekran görüntüsünü aç, "al" varsa yenisini çek
+            if any(k in metin for k in ["göster", "goster", "aç", "ac", "bak"]):
+                # Son ekran görüntüsünü masaüstünden bul ve aç
+                import glob as g
+                import os
+                masaustu = os.path.expanduser("~\\Desktop")
+                dosyalar = sorted(g.glob(os.path.join(masaustu, "ekran_*.png")), reverse=True)
+                if dosyalar:
+                    try:
+                        os.startfile(dosyalar[0])
+                        return f"Son ekran görüntüsünü açıyorum {ad}.", "ekran_goster", 0.95
+                    except Exception:
+                        pass
+                return f"Masaüstünde ekran görüntüsü bulamadım {ad}.", "hata", 0.9
             else:
-                return f"Ekran görüntüsü alınamadı: {mesaj}", "hata", 0.9
+                basarili, mesaj = bk.ekran_goruntusu()
+                if basarili:
+                    return f"{mesaj} {ad}.", "ekran_goruntusu", 0.95
+                else:
+                    return f"Ekran görüntüsü alınamadı: {mesaj}", "hata", 0.9
 
         # ── 3. Klasör açma komutları ──
         if "masaüstü" in metin or "masaustu" in metin_norm:
+            # Yeni klasör oluşturma: "masaüstünde yeni klasör aç/oluştur"
+            if "yeni" in metin and ("klasör" in metin or "klasor" in metin_norm):
+                import os
+                masaustu = os.path.expanduser("~\\Desktop")
+                # İsimsiz klasör adı bul (Yeni Klasör, Yeni Klasör 2, ...)
+                isim = "Yeni Klasör"
+                sayac = 1
+                while os.path.exists(os.path.join(masaustu, isim)):
+                    sayac += 1
+                    isim = f"Yeni Klasör {sayac}"
+                yol = os.path.join(masaustu, isim)
+                try:
+                    os.makedirs(yol)
+                    os.startfile(yol)
+                    return f"Masaüstünde '{isim}' oluşturdum ve açtım {ad}!", "klasor_olustur", 0.95
+                except Exception as e:
+                    return f"Klasör oluşturulamadı: {e}", "hata", 0.9
             if eylem_varmi(metin, AC_FIILLERI):
                 basarili, mesaj = bk.masaustu_ac()
                 return f"Masaüstü açılıyor {ad}!", "klasor_ac", 0.95 if basarili else 0.5
@@ -429,14 +467,19 @@ class KalipMotoru:
                     elif eylem_kapat:
                         return self._program_kapat(program_adi, ad)
 
-        # ── 8. Bilgisayarı kapat / yeniden başlat ──
+        # ── 8. Tek kelime "kapat" → aktif pencereyi kapat ──
+        if metin.strip() in ("kapat", "kapa", "pencereyi kapat", "bunu kapat"):
+            bk.pencere_kapat()
+            return f"Pencere kapatıldı {ad}.", "pencere_kapat", 0.95
+
+        # ── 10. Bilgisayarı kapat / yeniden başlat ──
         if "bilgisayar" in metin or "bilgisayari" in metin_norm:
             if any(f in metin for f in KAPAT_FIILLERI):
                 return f"Bilgisayarı kapatma komutunu güvenlik nedeniyle sesli olarak çalıştırmıyorum {ad}. Bunu manuel yapmanı öneririm.", "guvenlik", 0.95
             if "yeniden" in metin and ("başlat" in metin or "baslat" in metin):
                 return f"Bilgisayarı yeniden başlatma komutunu güvenlik nedeniyle çalıştırmıyorum {ad}.", "guvenlik", 0.95
 
-        # ── 9. Kısayollar ──
+        # ── 11. Kısayollar ──
         if "kaydet" in metin and ("dosya" in metin or "belge" in metin):
             bk.kisayol_bas("ctrl", "s")
             return f"Kaydedildi {ad}!", "kisayol", 0.95
