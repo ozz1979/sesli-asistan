@@ -605,22 +605,33 @@ class AtlasArayuz(QMainWindow):
     def _sidebar_modul(self, baslik, deger):
         """Dinamik modül durumu gösteren sidebar öğesi."""
         container = QWidget()
-        container.setFixedHeight(46)
-        container.setStyleSheet("background: transparent;")
+        container.setFixedHeight(52)
+        container.setStyleSheet(f"""
+            QWidget {{
+                background: transparent;
+                border-left: 2px solid {C['border']};
+            }}
+            QWidget:hover {{
+                background: rgba(0, 180, 255, 0.04);
+                border-left: 2px solid {C['cyan_dim']};
+            }}
+        """)
         vlay = QVBoxLayout(container)
-        vlay.setContentsMargins(22, 4, 10, 4)
-        vlay.setSpacing(1)
+        vlay.setContentsMargins(18, 5, 10, 5)
+        vlay.setSpacing(2)
 
         baslik_lbl = QLabel(baslik)
-        baslik_lbl.setFont(QFont("Segoe UI", 9))
-        baslik_lbl.setStyleSheet(f"color: {C['text']}; background: transparent;")
+        baslik_lbl.setFont(QFont("Segoe UI", 9, QFont.Weight.DemiBold))
+        baslik_lbl.setStyleSheet(f"color: {C['text']}; background: transparent; border: none;")
         vlay.addWidget(baslik_lbl)
 
         deger_lbl = QLabel(deger)
-        deger_lbl.setObjectName(f"modul_{baslik.lower()}_deger")
         deger_lbl.setFont(QFont("Consolas", 8))
-        deger_lbl.setStyleSheet(f"color: {C['cyan_dim']}; background: transparent;")
+        deger_lbl.setStyleSheet(f"color: {C['cyan_dim']}; background: transparent; border: none;")
         vlay.addWidget(deger_lbl)
+
+        # Doğrudan referans — findChildren yerine
+        container._deger_lbl = deger_lbl
 
         return container
 
@@ -791,8 +802,9 @@ class AtlasArayuz(QMainWindow):
         text = mod_str.get(mod, mod)
         self.dikkat_val.setText(text)
         self.kure.set_mod(mod)
-        # Sidebar beyin modülü güncelle
-        self._sidebar_modul_guncelle(self.sidebar_beyin, text)
+        # Sidebar beyin modülü güncelle — aktif modlarda parlak renk
+        aktif = mod in ("aktif", "mesgul", "isim")
+        self._sidebar_modul_guncelle(self.sidebar_beyin, text, aktif=aktif)
 
     def _bellek_guncelle(self, durum):
         toplam = durum.get("toplam_etkilesim", 0)
@@ -800,7 +812,7 @@ class AtlasArayuz(QMainWindow):
         text = f"{calisma}/7 aktif · {toplam} toplam"
         self.hafiza_val.setText(text)
         # Sidebar hafıza modülü güncelle
-        self._sidebar_modul_guncelle(self.sidebar_hafiza, text)
+        self._sidebar_modul_guncelle(self.sidebar_hafiza, text, aktif=toplam > 0)
 
     def _duygu_guncelle(self, duygu):
         duygular = {
@@ -811,7 +823,7 @@ class AtlasArayuz(QMainWindow):
         text = duygular.get(duygu, duygu.capitalize())
         self.duygu_val.setText(text)
         # Sidebar duygu modülü güncelle
-        self._sidebar_modul_guncelle(self.sidebar_duygu, text)
+        self._sidebar_modul_guncelle(self.sidebar_duygu, text, aktif=duygu != "notr")
 
     def _hata_goster(self, hata):
         self._mesaj_ekle("sistem", f"⚠️ {hata}")
@@ -829,13 +841,16 @@ class AtlasArayuz(QMainWindow):
         else:
             self.karsilama_label.setText("Hoş geldin")
 
-    def _sidebar_modul_guncelle(self, container, deger_text):
+    def _sidebar_modul_guncelle(self, container, deger_text, aktif=False):
         """Sidebar modül widget'ının değer label'ını güncelle."""
         try:
-            for child in container.findChildren(QLabel):
-                if child.objectName().startswith("modul_") and child.objectName().endswith("_deger"):
-                    child.setText(deger_text)
-                    break
+            lbl = container._deger_lbl
+            lbl.setText(deger_text)
+            # Aktif durumda parlak, pasif durumda soluk
+            if aktif:
+                lbl.setStyleSheet(f"color: {C['cyan']}; background: transparent; border: none;")
+            else:
+                lbl.setStyleSheet(f"color: {C['cyan_dim']}; background: transparent; border: none;")
         except Exception:
             pass
 
