@@ -1,5 +1,5 @@
 {
-    "version": "8.2h",
+    "version": "8.2i",
     "asistan_adi": "ATLAS",
     "tetik_kelime": "atlas",
     "kullanici": {
@@ -31,6 +31,8 @@
         "gemini_yedek_model": "gemini-2.0-flash-lite",
         "deepseek_api_key": "",
         "deepseek_model": "deepseek-chat",
+        "groq_api_key": "",
+        "groq_model": "llama-3.3-70b-versatile",
         "ollama_model": "llama3",
         "ollama_url": "http://localhost:11434",
         "max_token": 100,
