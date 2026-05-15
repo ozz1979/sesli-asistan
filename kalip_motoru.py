@@ -457,43 +457,74 @@ class KalipMotoru:
 
     def _metin_yazma_kontrol(self, metin, metin_norm, ad):
         """
-        'X yaz', 'şunu yaz: X', 'yaz X' gibi komutları algıla ve gerçekten yaz.
+        Metin yazma komutlarını algıla ve gerçekten yaz.
+        
+        Desteklenen kalıplar:
+        - "merhaba dünya yaz"
+        - "şunu yaz: merhaba dünya"
+        - "yaz merhaba dünya"
+        - "devamını yaz benim adım Özgür"
+        - "yazının devamını yaz test metni"
+        - "not defterine yaz merhaba"
         """
         yazilacak = None
 
-        # "şunu yaz: merhaba dünya" / "bunu yaz merhaba"
+        # "söylediklerimi yaz" / "söylediğimi yaz" → özel durum
+        if any(k in metin for k in ["söylediklerimi yaz", "söylediğimi yaz", "dediklerimi yaz", "dediğimi yaz"]):
+            return f"Ne yazmamı istiyorsun {ad}? Yazmamı istediğin metni söyle.", "metin_soru", 0.95
+
+        # 1. "şunu yaz: merhaba dünya" / "bunu yaz merhaba"
         m = re.search(r"(?:şunu|bunu|su|bu)\s+yaz\s*:?\s*(.+)", metin)
         if m:
             yazilacak = m.group(1).strip()
 
-        # "merhaba dünya yaz" / "test mesajı yaz"
+        # 2. "devamını yaz X" / "yazının devamını yaz X" / "not defterine yaz X"
+        if not yazilacak:
+            m = re.search(r"(?:devam[ıi]n[ıi]|not\s*defter[ie]ne?)\s+yaz\s+(.+)", metin)
+            if m:
+                yazilacak = m.group(1).strip()
+
+        # 3. "... yaz ..." — "yaz" ortada, sonrası yazılacak metin (en az 3 karakter)
+        if not yazilacak:
+            m = re.search(r"\byaz\b\s+(.{3,})", metin)
+            if m:
+                kalan = m.group(1).strip()
+                # "yaz" dan sonraki kısım program adı veya eylem değilse
+                if kalan not in PROGRAM_HARITASI:
+                    # "yazı" kelimesiyle karışmasın — "yazısı", "yazıyı" gibi
+                    # "yaz" dan önceki karakter boşluk veya satır başı olmalı
+                    yazilacak = kalan
+
+        # 4. "merhaba dünya yaz" — sondaki "yaz" ile biter
         if not yazilacak:
             m = re.search(r"^(.+?)\s+yaz(?:dır)?$", metin)
             if m:
                 kalan = m.group(1).strip()
-                # "yaz" ile biten ama program açma/kapatma değilse
+                # Fiil veya program adı değilse
                 if not any(f in kalan for f in AC_FIILLERI | KAPAT_FIILLERI):
                     if kalan not in PROGRAM_HARITASI and len(kalan) > 1:
-                        yazilacak = kalan
+                        # "yazının devamını" gibi sadece talimat olan kısımları atla
+                        if not re.match(r"^(yazının\s+devamını|devamını)$", kalan):
+                            yazilacak = kalan
 
-        # "yaz: merhaba" / "yaz merhaba dünya"
+        # 5. "yaz: merhaba" / "yaz merhaba dünya" — başta "yaz"
         if not yazilacak:
             m = re.search(r"^yaz\s*:?\s+(.+)", metin)
             if m:
                 yazilacak = m.group(1).strip()
 
-        # "söylediklerimi yaz" / "söylediğimi yaz" → bunlar özel durum, yazılacak metin yok
-        if yazilacak and any(k in yazilacak for k in ["söylediklerimi", "söylediğimi", "dediklerimi", "dediğimi"]):
-            return f"Ne yazmamı istiyorsun {ad}? Yazmamı istediğin metni söyle.", "metin_soru", 0.95
-
+        # Yazılacak metin bulundu → yaz
         if yazilacak and len(yazilacak) > 0:
-            basarili, mesaj = bk.metin_yaz(yazilacak)
-            if basarili:
-                logger.info(f"Metin yazıldı: {yazilacak[:50]}")
-                return f"Yazdım {ad}.", "metin_yaz", 0.95
-            else:
-                logger.error(f"Metin yazma hatası: {mesaj}")
-                return f"Yazamadım: {mesaj}", "metin_hata", 0.9
+            # "yazısı" gibi kalıntıları temizle
+            yazilacak = re.sub(r'\s+yazısı$', '', yazilacak).strip()
+            if len(yazilacak) > 0:
+                basarili, mesaj = bk.metin_yaz(yazilacak)
+                if basarili:
+                    logger.info(f"Metin yazıldı: {yazilacak[:50]}")
+                    return f"Yazdım {ad}.", "metin_yaz", 0.95
+                else:
+                    logger.error(f"Metin yazma hatası: {mesaj}")
+                    return f"Yazamadım: {mesaj}", "metin_hata", 0.9
 
         return None
 
