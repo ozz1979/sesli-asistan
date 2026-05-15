@@ -7,20 +7,91 @@ Görev: Bilinen sorulara anında yanıt (<100ms)
 Kahneman'ın Sistem 1'i: Otomatik, bilinçdışı, kalıp tabanlı.
 "Saat kaç?" → Düşünmeden saate bak
 "Merhaba" → Hemen "Merhaba" de
+"Chrome'u aç" → Düşünmeden çalıştır
 """
 
 import re
 import time
 import random
+import subprocess
+import logging
 from datetime import datetime
 from turkce import turkce_normalize
+
+logger = logging.getLogger("ATLAS.kalip")
+
+# ============================================================
+# BİLGİSAYAR KOMUTLARI — Windows program haritası
+# ============================================================
+
+PROGRAM_HARITASI = {
+    # Tarayıcılar
+    "chrome": "start chrome",
+    "google chrome": "start chrome",
+    "google": "start chrome",
+    "krom": "start chrome",
+    "tarayıcı": "start chrome",
+    "tarayici": "start chrome",
+    "firefox": "start firefox",
+    "edge": "start msedge",
+    "opera": "start opera",
+    # Ofis
+    "not defteri": "notepad",
+    "notepad": "notepad",
+    "word": "start winword",
+    "excel": "start excel",
+    "powerpoint": "start powerpnt",
+    # Sistem araçları
+    "hesap makinesi": "calc",
+    "hesap makinası": "calc",
+    "hesap makinesini": "calc",
+    "calculator": "calc",
+    "paint": "mspaint",
+    "dosya gezgini": "explorer",
+    "gezgin": "explorer",
+    "explorer": "explorer",
+    "ayarlar": "start ms-settings:",
+    "windows ayarları": "start ms-settings:",
+    "görev yöneticisi": "taskmgr",
+    "denetim masası": "control",
+    "ekran alıntısı": "snippingtool",
+    # Terminal
+    "komut satırı": "start cmd",
+    "cmd": "start cmd",
+    "terminal": "start cmd",
+    "powershell": "start powershell",
+    # Medya
+    "spotify": "start spotify",
+    "müzik çalar": "start wmplayer",
+    "media player": "start wmplayer",
+    # İletişim
+    "whatsapp": "start whatsapp:",
+    "telegram": "start telegram",
+    "discord": "start discord",
+    "teams": "start msteams",
+}
+
+# Açma/kapatma fiilleri
+AC_FIILLERI = {"aç", "ac", "başlat", "baslat", "çalıştır", "calistir", "getir", "göster", "goster"}
+KAPAT_FIILLERI = {"kapat", "kapa", "sonlandır", "bitir", "durdur"}
+
+# Ses kontrol komutları
+SES_KOMUTLARI = {
+    "sesi aç": "nircmd.exe mutesysvolume 0",
+    "sesi kapat": "nircmd.exe mutesysvolume 1",
+    "sesi kıs": "nircmd.exe changesysvolume -5000",
+    "sesi ac": "nircmd.exe mutesysvolume 0",
+    "sesi yükselt": "nircmd.exe changesysvolume 5000",
+    "sesi arttır": "nircmd.exe changesysvolume 5000",
+    "sesi azalt": "nircmd.exe changesysvolume -5000",
+}
+
 
 # ============================================================
 # KALIP VERİTABANI
 # ============================================================
 
 # Her kalıp: (regex_pattern, yanıt_listesi, kategori)
-# Yanıt listesinden rastgele seçilir (doğallık için)
 
 KALIPLAR = [
     # ──── SELAMLAŞMA ────
@@ -38,7 +109,7 @@ KALIPLAR = [
 
     (r"^(günaydın|gunaydin)\b", [
         "Günaydın {ad}! Umarım güzel bir güne başlıyorsun.",
-        "Günaydın! Bugün hava {hava_emoji}. Hayırlı bir gün olsun!",
+        "Günaydın! Hayırlı bir gün olsun!",
         "Günaydın {ad}! Kahve zamanı mı?",
     ], "selam"),
 
@@ -58,7 +129,7 @@ KALIPLAR = [
     ], "selam"),
 
     # ──── HAL HATIR ────
-    (r"(nasılsın|nasilsin|nası[l]sın)", [
+    (r"(nasılsın|nasilsin|nasıl\s*sın)", [
         "İyiyim, teşekkür ederim! Sen nasılsın {ad}?",
         "Harikayım! Sen nasıl hissediyorsun?",
         "Çok iyiyim, sağol! Senin günün nasıl gidiyor?",
@@ -116,8 +187,7 @@ KALIPLAR = [
     ], "tanitim"),
 
     (r"(ne yapabilirsin|neler yapabilirsin|yeteneklerin)", [
-        "Saat ve tarih söyleyebilir, müzik açabilir, program çalıştırabilir, internette araştırma yapabilir, sorularını cevaplayabilir ve seninle sohbet edebilirim! Ne yapmamı istersin?",
-        "Bilgisayarını kontrol edebilir, sorularına cevap verebilir, hesap yapabilir, hatırlatma kurabilir ve seninle her konuda sohbet edebilirim {ad}!",
+        "Bilgisayarını kontrol edebilir, program açıp kapatabilir, sorularına cevap verebilir ve seninle her konuda sohbet edebilirim {ad}! Ne yapmamı istersin?",
     ], "tanitim"),
 
     # ──── OLUMLU YANIT ────
@@ -148,11 +218,11 @@ KALIPLAR = [
         "{hesap_sonuc}.",
     ], "hesap"),
 
-    # ──── ESPRI / ŞAKA ────
+    # ──── ESPRİ / ŞAKA ────
     (r"(bir? (fıkra|şaka|espri)\s*(anlat|söyle))", [
-        "Bilgisayar neden üşümez? Çünkü Windows'u var! 😄",
-        "Yapay zeka neden yorulmaz? Çünkü hep şarjda! 😄",
-        "Robot doktora gider. Doktor sorar: 'Neyin var?' Robot: 'Virusum var doktor!' 😄",
+        "Bilgisayar neden üşümez? Çünkü Windows'u var!",
+        "Yapay zeka neden yorulmaz? Çünkü hep şarjda!",
+        "Robot doktora gider. Doktor sorar: Neyin var? Robot: Virusum var doktor!",
     ], "espri"),
 
     # ──── ATLAS'A SESLENME ────
@@ -161,6 +231,24 @@ KALIPLAR = [
         "Buradayım! Ne yapabilirim senin için?",
         "Evet, buradayım {ad}! Söyle bakalım.",
     ], "tetik"),
+
+    # ──── GÜNCEL BİLGİ SORULARI ────
+    (r"(hava\s*(nasıl|durumu)|hava\s*kaç\s*derece)", [
+        "Hava durumu bilgisi için internet bağlantısı gerekiyor. Şu an yerel bilgim yok, ama araştırabilirim {ad}.",
+    ], "hava"),
+
+    (r"(kendine\s*iyi\s*bak|iyi\s*bak\s*kendine)", [
+        "Sen de kendine iyi bak {ad}! Her zaman buradayım.",
+    ], "veda"),
+
+    (r"(seni\s*seviyorum|seviyorum\s*seni)", [
+        "Çok teşekkür ederim {ad}! Ben de seni çok seviyorum! Senin için her zaman buradayım.",
+    ], "duygu"),
+
+    (r"(çok\s*teşekkürler|çok\s*sağol)", [
+        "Ne demek {ad}, ben teşekkür ederim! Başka bir şey lazım olursa söyle.",
+        "Rica ederim, her zaman yardıma hazırım!",
+    ], "tesekkur"),
 ]
 
 # ============================================================
@@ -183,6 +271,7 @@ class KalipMotoru:
     """
     Bazal Ganglia — otomatik kalıp eşleştirme motoru.
     Bilinen sorulara düşünmeden anında cevap verir (Sistem 1).
+    + Bilgisayar komutlarını algılar ve çalıştırır.
     """
 
     def __init__(self, hafiza=None):
@@ -202,6 +291,14 @@ class KalipMotoru:
         text_lower = text.lower().strip()
         text_norm = turkce_normalize(text)
 
+        # ──── 1. BİLGİSAYAR KOMUTLARI (en yüksek öncelik) ────
+        yanit, kat, guven = self._bilgisayar_komutu_kontrol(text_lower, text_norm)
+        if yanit:
+            self._sayac[kat] = self._sayac.get(kat, 0) + 1
+            logger.info(f"Bilgisayar komutu: [{kat}] {yanit}")
+            return yanit, kat, guven
+
+        # ──── 2. KALIP EŞLEŞTİRME ────
         for pattern, yanitlar, kategori in self._kaliplar:
             try:
                 match = re.search(pattern, text_lower, re.IGNORECASE)
@@ -218,13 +315,95 @@ class KalipMotoru:
             except Exception:
                 continue
 
-        # Prosedürel bellekte ara
+        # ──── 3. PROSEDÜREL BELLEK ────
         if self.hafiza:
             kalip = self.hafiza.prosedurel.kalip_bul(text_lower)
             if kalip and kalip.get("guc", 0) >= 1.0:
                 return kalip["yanit"], "prosedurel", 0.7
 
         return None, None, 0.0
+
+    # ============================================================
+    # BİLGİSAYAR KOMUTU İŞLEME
+    # ============================================================
+
+    def _bilgisayar_komutu_kontrol(self, metin, metin_norm):
+        """Bilgisayar komutlarını algıla ve çalıştır."""
+        ad = ""
+        if self.hafiza:
+            ad = self.hafiza.kullanici_bilgisi_getir("ad", "")
+
+        # ── Ses komutları ──
+        for anahtar, komut in SES_KOMUTLARI.items():
+            if anahtar in metin or turkce_normalize(anahtar) in metin_norm:
+                try:
+                    subprocess.Popen(komut, shell=True)
+                    return f"Tamam {ad}, {anahtar}ıyorum.", "ses_kontrol", 0.95
+                except Exception:
+                    pass
+
+        # ── Program açma ──
+        eylem_ac = any(f in metin for f in AC_FIILLERI)
+        eylem_kapat = any(f in metin for f in KAPAT_FIILLERI)
+
+        if eylem_ac or eylem_kapat:
+            # Program adı bul (en uzun eşleşme önce)
+            for program_adi in sorted(PROGRAM_HARITASI.keys(), key=len, reverse=True):
+                prog_norm = turkce_normalize(program_adi)
+                if program_adi in metin or prog_norm in metin_norm:
+                    if eylem_ac:
+                        return self._program_ac(program_adi, ad)
+                    elif eylem_kapat:
+                        return self._program_kapat(program_adi, ad)
+
+        # ── Bilgisayarı kapat / yeniden başlat ──
+        if "bilgisayar" in metin or "bilgisayari" in metin_norm:
+            if any(f in metin for f in KAPAT_FIILLERI):
+                return f"Bilgisayarı kapatma komutunu güvenlik nedeniyle sesli olarak çalıştırmıyorum {ad}. Bunu manuel yapmanı öneririm.", "guvenlik", 0.95
+            if "yeniden" in metin and ("başlat" in metin or "baslat" in metin):
+                return f"Bilgisayarı yeniden başlatma komutunu güvenlik nedeniyle çalıştırmıyorum {ad}.", "guvenlik", 0.95
+
+        return None, None, 0.0
+
+    def _program_ac(self, program_adi, ad):
+        """Program aç."""
+        komut = PROGRAM_HARITASI[program_adi]
+        try:
+            subprocess.Popen(komut, shell=True)
+            # Güzel isim
+            guzel_isim = program_adi.replace("google chrome", "Chrome").replace("google", "Chrome")
+            guzel_isim = guzel_isim.title()
+            logger.info(f"Program açıldı: {program_adi} → {komut}")
+            return f"{guzel_isim} açılıyor {ad}!", "program_ac", 0.95
+        except Exception as e:
+            logger.error(f"Program açma hatası: {program_adi} → {e}")
+            return f"{program_adi.title()} açılırken hata oluştu.", "program_hata", 0.9
+
+    def _program_kapat(self, program_adi, ad):
+        """Program kapat."""
+        komut = PROGRAM_HARITASI[program_adi]
+        # Komuttan exe adını çıkar
+        exe = komut.replace("start ", "").strip()
+        # Bazı özel durumlar
+        exe_haritasi = {
+            "chrome": "chrome", "msedge": "msedge", "firefox": "firefox",
+            "notepad": "notepad", "calc": "Calculator",
+            "mspaint": "mspaint", "explorer": "explorer",
+            "calc": "CalculatorApp",
+        }
+        exe_adi = exe_haritasi.get(exe, exe)
+        try:
+            subprocess.Popen(f"taskkill /im {exe_adi}.exe /f", shell=True,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            logger.info(f"Program kapatıldı: {program_adi}")
+            return f"{program_adi.title()} kapatılıyor {ad}.", "program_kapat", 0.95
+        except Exception as e:
+            logger.error(f"Program kapatma hatası: {program_adi} → {e}")
+            return f"{program_adi.title()} kapatılırken hata oluştu.", "program_hata", 0.9
+
+    # ============================================================
+    # DEĞİŞKEN DOLDURMA
+    # ============================================================
 
     def _degisken_doldur(self, yanit, text, match=None):
         """Yanıt şablonundaki değişkenleri doldur"""
