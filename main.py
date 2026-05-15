@@ -1,5 +1,5 @@
 """
-Sesli AI Asistan v7.2 - Ana Program
+Sesli AI Asistan v7.3 - Ana Program
 - 3 Katmanli Akilli Mimari (yerel + Gemini + yedek)
 - Kullanici tanima (ilk acilista isim sorar)
 - Derin Gemini baglanti testi
@@ -109,7 +109,7 @@ class SesliAsistan:
             print(f"\n5) Ilk kullanim - kullanici adi sorulacak")
             self.isim_bekleniyor = True
 
-        print(f"\n[OK] Tum kontroller basarili! (v7.2 - 3 Katmanli Mimari)\n")
+        print(f"\n[OK] Tum kontroller basarili! (v7.3 - 3 Katmanli Mimari)\n")
         return True
 
     def _ollama_kontrol(self):
@@ -143,7 +143,7 @@ def gui_baslat(asistan):
 def konsol_baslat(asistan):
     LOGO = r"""
 ================================================
-       SESLI AI ASISTAN v7.2
+       SESLI AI ASISTAN v7.3
   3 Katmanli Akilli Mimari
   Yerel + Gemini + Hizli TTS
   Kullanici Tanima + Otomatik Guncelleme
@@ -159,17 +159,32 @@ def konsol_baslat(asistan):
     # Kullanici tanima
     if asistan.isim_bekleniyor:
         asistan.sesli_yanit.konus("Merhaba! Ben senin sesli asistaninim. Adini ogrenebilir miyim?")
+        time.sleep(1.5)  # Hoparlor yankisi dusmesin
         print("\n[*] Adinizi soyleyin...")
-        isim = asistan.ses_tanima.dinle_ve_cevir()
-        if isim:
-            isim = isim.strip().title()
-            asistan.hafiza.kullanici_adi_kaydet(isim)
-            asistan.kullanici_adi = isim
-            asistan.yapay_zeka.kullanici_adi = isim
-            asistan.isim_bekleniyor = False
-            asistan.sesli_yanit.konus(f"Memnun oldum {isim}! Sana nasil yardimci olabilirim?")
+        # 3 deneme hakkı
+        for _deneme in range(3):
+            isim = asistan.ses_tanima.dinle_ve_cevir()
+            if isim:
+                isim = isim.strip().title()
+                # Yanki filtresi
+                yanki = ["merhaba", "asistan", "ogrenebilir", "yardimci", "miyim", "hello"]
+                if len(isim) >= 2 and not any(k in isim.lower() for k in yanki):
+                    isim_parca = isim.split()[0] if " " in isim else isim
+                    asistan.hafiza.kullanici_adi_kaydet(isim_parca)
+                    asistan.kullanici_adi = isim_parca
+                    asistan.yapay_zeka.kullanici_adi = isim_parca
+                    asistan.isim_bekleniyor = False
+                    asistan.sesli_yanit.konus(f"Memnun oldum {isim_parca}! Sana nasil yardimci olabilirim?")
+                    break
+                else:
+                    print(f"[!] Yanki/gurultu algilandi: '{isim}', tekrar soruluyor...")
+                    asistan.sesli_yanit.konus("Adini net duyamadim. Sadece adini soyler misin?")
+                    time.sleep(1.0)
+            else:
+                asistan.sesli_yanit.konus("Duyamadim, tekrar soyler misin?")
+                time.sleep(1.0)
         else:
-            asistan.sesli_yanit.konus("Duyamadim ama sorun degil, daha sonra soylerebilirsin.")
+            asistan.sesli_yanit.konus("Sorun degil, daha sonra adimi degistir diyebilirsin.")
             asistan.isim_bekleniyor = False
     else:
         asistan.sesli_yanit.konus(f"Merhaba {asistan.kullanici_adi}! Seni dinliyorum.")
@@ -251,7 +266,7 @@ def _isle(asistan, metin):
 
 
 def main():
-    print("Sesli AI Asistan v7.2 baslatiliyor...")
+    print("Sesli AI Asistan v7.3 baslatiliyor...")
     asistan = SesliAsistan()
 
     gui_var = True
