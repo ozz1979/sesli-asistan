@@ -187,15 +187,23 @@ class AtlasBeyin:
         self._gui_durum("AI bağlantısı test ediliyor...")
         test = self.karar.baglanti_test()
         if test["basarili"]:
-            api_key = self.config.get("ai", {}).get("gemini_api_key", "")
-            masked = api_key[:6] + "..." + api_key[-4:] if len(api_key) > 10 else "***"
-            self._gui_mesaj("sistem", f"✅ Gemini AI bağlantısı başarılı! ({test['model']}, Key: {masked})")
+            # Hangi AI çalışıyor göster
+            calisan = []
+            for ai_ad in ["gemini", "deepseek", "groq"]:
+                durum = test.get(ai_ad, {}).get("durum", "yok")
+                if durum == "ok":
+                    calisan.append(ai_ad.capitalize())
+            ai_bilgi = ", ".join(calisan) if calisan else "AI"
+            self._gui_mesaj("sistem", f"✅ AI bağlantısı başarılı! ({ai_bilgi})")
         else:
-            self._gui_mesaj("sistem", f"⚠️ Gemini AI HATASI: {test['hata']}")
+            self._gui_mesaj("sistem", f"⚠️ AI HATASI: {test.get('hata', 'Bilinmeyen hata')}")
             if test.get("cozum"):
                 self._gui_mesaj("sistem", f"💡 Çözüm: {test['cozum']}")
-            if test.get("detay"):
-                logger.error(f"Gemini bağlantı detayı: {test['detay']}")
+            # Detaylı durum logla
+            for ai_ad in ["gemini", "deepseek", "groq"]:
+                durum = test.get(ai_ad, {})
+                if durum.get("durum") not in ("ok", "yok", "key_yok"):
+                    logger.error(f"{ai_ad} durumu: {durum}")
 
         # 4. Hafıza durumu
         h_durum = self.hafiza.durum_ozeti()
