@@ -1,5 +1,5 @@
 """
-Yapay Zeka Modulu v7.0
+Yapay Zeka Modulu v7.1
 - 3 KATMANLI AKILLI SISTEM:
   Katman 1: Aninda yerel eslestirme (0ms, AI yok, CPU yok)
   Katman 2: Google Gemini Flash (1-2sn, bulut)
