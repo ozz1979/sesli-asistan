@@ -95,6 +95,7 @@ echo Set Shortcut = WshShell.CreateShortcut(WshShell.SpecialFolders("Desktop") ^
 echo Shortcut.TargetPath = "%CD%\baslat.bat" >> "%TEMP%\atlas_kisayol.vbs"
 echo Shortcut.WorkingDirectory = "%CD%" >> "%TEMP%\atlas_kisayol.vbs"
 echo Shortcut.Description = "ATLAS Sesli AI Asistan" >> "%TEMP%\atlas_kisayol.vbs"
+echo Shortcut.IconLocation = "%CD%\atlas_logo.ico" >> "%TEMP%\atlas_kisayol.vbs"
 echo Shortcut.Save >> "%TEMP%\atlas_kisayol.vbs"
 cscript //nologo "%TEMP%\atlas_kisayol.vbs" >nul 2>&1
 del "%TEMP%\atlas_kisayol.vbs" >nul 2>&1
