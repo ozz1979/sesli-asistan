@@ -1,5 +1,5 @@
 {
-    "version": "8.2g",
+    "version": "8.2h",
     "asistan_adi": "ATLAS",
     "tetik_kelime": "atlas",
     "kullanici": {
@@ -28,7 +28,7 @@
         "yedek": "ollama",
         "gemini_model": "gemini-2.0-flash",
         "gemini_api_key": "",
-        "gemini_yedek_model": "gemini-1.5-flash",
+        "gemini_yedek_model": "gemini-2.0-flash-lite",
         "ollama_model": "llama3",
         "ollama_url": "http://localhost:11434",
         "max_token": 100,
