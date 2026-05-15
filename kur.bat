@@ -1,129 +1,127 @@
 @echo off
 chcp 65001 >nul 2>&1
-title Sesli AI Asistan v7.0 - Kurulum
+title ATLAS v8.0 - Kurulum
+color 0B
 
-echo ================================================
-echo    SESLI AI ASISTAN v7.0 - KURULUM
-echo    Kullanici Tanima + Derin Hata Analizi
-echo ================================================
+echo.
+echo  ╔══════════════════════════════════════════════════╗
+echo  ║          ATLAS v8.0 - Beyin Mimarisi            ║
+echo  ║          Sesli AI Asistan Kurulumu               ║
+echo  ╚══════════════════════════════════════════════════╝
 echo.
 
-:: Python kontrol
-echo [1/7] Python kontrol ediliyor...
+:: Python kontrolü
+echo [1/6] Python kontrol ediliyor...
 python --version >nul 2>&1
 if errorlevel 1 (
-    echo [HATA] Python bulunamadi!
-    echo Python 3.10+ yukleyin: https://www.python.org/downloads/
-    echo ONEMLI: Kurulumda "Add Python to PATH" secin!
+    echo HATA: Python bulunamadi! python.org adresinden Python yukleyin.
     pause
-    exit /b
+    exit /b 1
 )
 python --version
-echo [OK] Python bulundu!
 echo.
 
 :: Sanal ortam
-echo [2/7] Sanal ortam olusturuluyor...
+echo [2/6] Sanal ortam olusturuluyor...
 if not exist "venv" (
     python -m venv venv
-    echo [OK] Sanal ortam olusturuldu!
+    echo Sanal ortam olusturuldu.
 ) else (
-    echo [OK] Sanal ortam zaten var.
+    echo Sanal ortam mevcut.
 )
-echo.
-
-:: pip guncelle
-echo [3/7] pip guncelleniyor...
-venv\Scripts\python.exe -m pip install --upgrade pip --quiet
 echo.
 
 :: Paketler
-echo [4/7] Gerekli paketler yukleniyor...
-echo    (Her paket ayri yuklenir - hata olursa devam eder)
+echo [3/6] Paketler yukleniyor (bu biraz surebilir)...
 echo.
 
-echo    numpy yukleniyor...
-venv\Scripts\pip.exe install numpy --quiet 2>nul
-echo    sounddevice yukleniyor...
-venv\Scripts\pip.exe install sounddevice --quiet 2>nul
-echo    scipy yukleniyor...
-venv\Scripts\pip.exe install scipy --quiet 2>nul
-echo    SpeechRecognition yukleniyor...
-venv\Scripts\pip.exe install SpeechRecognition --quiet 2>nul
-echo    PyQt6 yukleniyor...
-venv\Scripts\pip.exe install PyQt6 --quiet 2>nul
-echo    requests yukleniyor...
-venv\Scripts\pip.exe install requests --quiet 2>nul
-echo    edge-tts yukleniyor...
-venv\Scripts\pip.exe install edge-tts --quiet 2>nul
-echo    pyttsx3 yukleniyor...
-venv\Scripts\pip.exe install pyttsx3 --quiet 2>nul
-echo    pyautogui yukleniyor...
-venv\Scripts\pip.exe install pyautogui --quiet 2>nul
-echo    pyperclip yukleniyor...
-venv\Scripts\pip.exe install pyperclip --quiet 2>nul
-echo    psutil yukleniyor...
-venv\Scripts\pip.exe install psutil --quiet 2>nul
-echo    pygame-ce yukleniyor...
-venv\Scripts\pip.exe install pygame-ce --quiet 2>nul
+venv\Scripts\python.exe -m pip install --upgrade pip >nul 2>&1
 
-echo.
-echo [OK] Paketler yuklendi!
-echo.
+echo   PyQt6 yukleniyor...
+venv\Scripts\python.exe -m pip install PyQt6>=6.6.0 >nul 2>&1
+if errorlevel 1 echo   UYARI: PyQt6 yuklenemedi!
 
-:: API Key kontrol
-echo [5/7] API anahtari kontrol ediliyor...
-venv\Scripts\python.exe -c "import json; c=json.load(open('config.json','r',encoding='utf-8')); k=c.get('gemini_api_key',''); print('KEY_SET' if k and k!='BURAYA_API_ANAHTARINIZI_YAZIN' else 'KEY_MISSING')" > _keycheck.tmp 2>nul
-set /p KEY_STATUS=<_keycheck.tmp
-del _keycheck.tmp >nul 2>&1
-if "%KEY_STATUS%"=="KEY_MISSING" (
-    echo [!] Gemini API anahtari ayarlanmamis!
-    echo     1. https://aistudio.google.com/apikey adresine gidin
-    echo     2. "Create API key" tiklayin
-    echo     3. Anahtari kopyalayin
-    echo.
-    set /p API_KEY="API anahtarini yapiştirin: "
-    if defined API_KEY (
-        venv\Scripts\python.exe -c "import json; c=json.load(open('config.json','r',encoding='utf-8')); c['gemini_api_key']='%API_KEY%'; json.dump(c,open('config.json','w',encoding='utf-8'),ensure_ascii=False,indent=4)" 2>nul
-        echo [OK] API anahtari kaydedildi!
-    )
-) else (
-    echo [OK] API anahtari ayarli!
+echo   SpeechRecognition yukleniyor...
+venv\Scripts\python.exe -m pip install SpeechRecognition>=3.10.0 >nul 2>&1
+if errorlevel 1 echo   UYARI: SpeechRecognition yuklenemedi!
+
+echo   PyAudio yukleniyor...
+venv\Scripts\python.exe -m pip install PyAudio>=0.2.14 >nul 2>&1
+if errorlevel 1 (
+    echo   UYARI: PyAudio yuklenemedi, alternatif deneniyor...
+    venv\Scripts\python.exe -m pip install pipwin >nul 2>&1
+    venv\Scripts\python.exe -m pipwin install pyaudio >nul 2>&1
 )
+
+echo   edge-tts yukleniyor...
+venv\Scripts\python.exe -m pip install edge-tts>=6.1.0 >nul 2>&1
+if errorlevel 1 echo   UYARI: edge-tts yuklenemedi!
+
+echo   pygame-ce yukleniyor...
+venv\Scripts\python.exe -m pip install pygame-ce>=2.4.0 >nul 2>&1
+if errorlevel 1 echo   UYARI: pygame-ce yuklenemedi!
+
+echo   google-generativeai yukleniyor...
+venv\Scripts\python.exe -m pip install google-generativeai>=0.5.0 >nul 2>&1
+if errorlevel 1 echo   UYARI: google-generativeai yuklenemedi!
+
+echo   numpy yukleniyor...
+venv\Scripts\python.exe -m pip install numpy>=1.26.0 >nul 2>&1
+if errorlevel 1 echo   UYARI: numpy yuklenemedi!
+
+echo   sounddevice yukleniyor...
+venv\Scripts\python.exe -m pip install sounddevice>=0.4.6 >nul 2>&1
+if errorlevel 1 echo   UYARI: sounddevice yuklenemedi!
+
+echo   scipy yukleniyor...
+venv\Scripts\python.exe -m pip install scipy>=1.12.0 >nul 2>&1
+if errorlevel 1 echo   UYARI: scipy yuklenemedi!
+
+echo   requests yukleniyor...
+venv\Scripts\python.exe -m pip install requests>=2.31.0 >nul 2>&1
+if errorlevel 1 echo   UYARI: requests yuklenemedi!
+
+echo   aiohttp yukleniyor...
+venv\Scripts\python.exe -m pip install aiohttp>=3.9.0 >nul 2>&1
+if errorlevel 1 echo   UYARI: aiohttp yuklenemedi!
+
+echo.
+echo   Tum paketler yuklendi!
 echo.
 
-:: Otomatik baslatma
-echo [6/7] Windows ile otomatik baslatma...
+:: Hafıza dizini
+echo [4/6] Hafiza dizini olusturuluyor...
+if not exist "hafiza" mkdir hafiza
+if not exist "ses_cache" mkdir ses_cache
 echo.
-echo Bilgisayar acildiginda asistan otomatik baslasin mi?
-echo (Istediginiz zaman iptal edebilirsiniz)
+
+:: API Key kontrolü
+echo [5/6] API Key kontrolu...
 echo.
-set /p OTO_BASLAT="Otomatik baslat? (E/H): "
-if /i "%OTO_BASLAT%"=="E" (
-    echo Set WshShell = CreateObject("WScript.Shell") > "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\SesliAsistan.vbs"
-    echo WshShell.CurrentDirectory = "%CD%" >> "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\SesliAsistan.vbs"
-    echo WshShell.Run "baslat.bat", 0, False >> "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\SesliAsistan.vbs"
-    echo [OK] Otomatik baslatma ayarlandi!
-    echo     Dosya: %APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\SesliAsistan.vbs
-    echo     Iptal: Bu dosyayi silmeniz yeterli.
+echo   Gemini API key'inizi config.json dosyasindaki
+echo   "gemini_api_key" alanina yazin.
+echo   (Ucretsiz: https://aistudio.google.com/apikey)
+echo.
+
+:: Windows başlangıcına ekleme
+echo [6/6] Windows baslangicina eklemek ister misiniz?
+set /p baslangic="  (E/H): "
+if /i "%baslangic%"=="E" (
+    echo Set WshShell = CreateObject("WScript.Shell") > "%TEMP%\atlas_startup.vbs"
+    echo WshShell.Run """%CD%\baslat.bat""", 0, False >> "%TEMP%\atlas_startup.vbs"
+
+    copy "%TEMP%\atlas_startup.vbs" "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\atlas_startup.vbs" >nul 2>&1
+    echo   ATLAS Windows baslangicina eklendi!
 ) else (
-    echo [OK] Otomatik baslatma atlandı.
-    echo     Istediginizde tekrar kur.bat calistirarak aktif edebilirsiniz.
+    echo   Atlandı.
 )
-echo.
 
-:: Baslat
-echo [7/7] Kurulum tamamlandi!
 echo.
-echo ================================================
-echo   KURULUM BASARILI! v7.0
-echo   Yenilikler:
-echo   - Kullanici tanima (isim sorar)
-echo   - Derin baglanti analizi
-echo   - 184+ yerel Turkce kalip
-echo   - Otomatik guncelleme
-echo ================================================
-echo.
-echo Asistani baslatmak icin: baslat.bat
+echo  ╔══════════════════════════════════════════════════╗
+echo  ║         KURULUM TAMAMLANDI!                      ║
+echo  ║                                                  ║
+echo  ║  Baslatmak icin: baslat.bat                      ║
+echo  ║  API key: config.json → gemini_api_key           ║
+echo  ╚══════════════════════════════════════════════════╝
 echo.
 pause
