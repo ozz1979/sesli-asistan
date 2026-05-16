@@ -128,6 +128,8 @@ class AtlasBeyin:
         from kisilik_motoru import KisilikMotoru
         from kimlik_tanima import KimlikTanima
         from guncelleyici import Guncelleyici
+        from ogrenme_motoru import OgrenmeMotoru
+        from bilgi_bankasi import BilgiBankasi
 
         self.hafiza = HafizaSistemi(config)
         self.kalip = KalipMotoru(self.hafiza)
@@ -136,7 +138,10 @@ class AtlasBeyin:
         self.ses = SesAlgilama(config)
         self.dil = DilAnlama(self.ses, config)
         self.konusma = KonusmaUretimi(config)
-        self.karar = KararMerkezi(self.kalip, self.hafiza, self.duygu, config)
+        self.ogrenme = OgrenmeMotoru(self.hafiza, config)
+        self.bilgi = BilgiBankasi()
+        self.karar = KararMerkezi(self.kalip, self.hafiza, self.duygu, config,
+                                   ogrenme=self.ogrenme, bilgi_bankasi=self.bilgi)
         self.kisilik = KisilikMotoru(self.hafiza)
         self.kimlik = KimlikTanima(self.hafiza)
         self.guncelleyici = Guncelleyici(config)
@@ -360,6 +365,12 @@ class AtlasBeyin:
                 if not metin:
                     continue
 
+                # Öğrenilmiş STT düzeltmelerini uygula
+                try:
+                    metin = self.ogrenme.stt_duzelt(metin)
+                except Exception:
+                    pass
+
                 # Dikkat filtresi — RAS
                 filtre = self.dikkat.filtrele(metin)
                 islem = filtre["islem"]
@@ -424,6 +435,12 @@ class AtlasBeyin:
 
         # 6. Hafızaya kaydet
         self.hafiza.asistan_soyledi(yanit, niyet_adi)
+
+        # 6.5 Öğrenme motoru — her etkileşimden öğren
+        try:
+            self.ogrenme.mesaj_analiz_et(metin, yanit, niyet)
+        except Exception as e:
+            logger.debug(f"Öğrenme hatası (kritik değil): {e}")
 
         # 7. GUI: asistan yanıtı
         yol_emoji = {"sistem1": "⚡", "sistem2": "🧠", "fallback": "🔄"}.get(yol, "")
@@ -499,6 +516,12 @@ class AtlasBeyin:
         """ATLAS'ı durdur"""
         self._calisiyor = False
         self.hafiza.oturum_kapat()
+        # Öğrenme verilerini kaydet
+        try:
+            rapor = self.ogrenme.oturum_kapat()
+            logger.info(f"Öğrenme raporu: {rapor}")
+        except Exception:
+            pass
         self.ses.durdur()
         self.konusma.temizle()
         logger.info("ATLAS durduruldu")
