@@ -439,18 +439,21 @@ class OgrenmeMotoru:
         if m:
             isim = m.group(1).strip().title()
             self.bellek.bilgiler["kullanici_hakkinda"]["ad"] = isim
+            self._semantik_kaydet("ad", isim)
 
         # Şehir öğrenme
         m = re.search(r"(?:ben\s+)?(\w+)['\']?(?:da|de|dan|den|lı|li|lu|lü)\s*(?:yaşıyorum|oturuyorum|kalıyorum)", mesaj_lower)
         if m:
             sehir = m.group(1).strip().title()
             self.bellek.bilgiler["kullanici_hakkinda"]["sehir"] = sehir
+            self._semantik_kaydet("sehir", sehir)
 
         # Meslek öğrenme
         m = re.search(r"(?:ben\s+)?(\w+(?:\s+\w+)?)\s*(?:olarak\s+)?çalışıyorum", mesaj_lower)
         if m:
             meslek = m.group(1).strip()
             self.bellek.bilgiler["kullanici_hakkinda"]["meslek"] = meslek
+            self._semantik_kaydet("meslek", meslek)
 
         # Yaş öğrenme
         m = re.search(r"(\d{1,3})\s*yaşındayım", mesaj_lower)
@@ -458,6 +461,7 @@ class OgrenmeMotoru:
             yas = int(m.group(1))
             if 5 < yas < 120:
                 self.bellek.bilgiler["kullanici_hakkinda"]["yas"] = yas
+                self._semantik_kaydet("yas", str(yas))
 
         # Doğum tarihi öğrenme
         # "4 temmuz 1979", "doğum tarihim 4 temmuz", "4/7/1979" vb.
@@ -470,10 +474,13 @@ class OgrenmeMotoru:
             yil = m.group(3) if m.group(3) else ""
             tarih_str = f"{gun} {ay_ad.title()}" + (f" {yil}" if yil else "")
             self.bellek.bilgiler["kullanici_hakkinda"]["dogum_tarihi"] = tarih_str
+            self._semantik_kaydet("dogum_tarihi", tarih_str)
         # Sayısal format: 4/7/1979
         m2 = re.search(r"(\d{1,2})[./](\d{1,2})[./](\d{4})", mesaj_lower)
         if m2:
-            self.bellek.bilgiler["kullanici_hakkinda"]["dogum_tarihi"] = f"{m2.group(1)}/{m2.group(2)}/{m2.group(3)}"
+            tarih_str2 = f"{m2.group(1)}/{m2.group(2)}/{m2.group(3)}"
+            self.bellek.bilgiler["kullanici_hakkinda"]["dogum_tarihi"] = tarih_str2
+            self._semantik_kaydet("dogum_tarihi", tarih_str2)
 
         # Hobi öğrenme
         m = re.search(r"(?:hobim|hobilerim|severim|seviyorum)\s+(.+?)(?:\.|$)", mesaj_lower)
@@ -482,8 +489,8 @@ class OgrenmeMotoru:
             hobiler = self.bellek.bilgiler["kullanici_hakkinda"].setdefault("hobiler", [])
             if hobi not in hobiler:
                 hobiler.append(hobi)
-                # Son 20 hobi tut
                 self.bellek.bilgiler["kullanici_hakkinda"]["hobiler"] = hobiler[-20:]
+                self._semantik_kaydet("hobiler", ", ".join(hobiler[-20:]))
 
         # İlgi alanı öğrenme (soru konularından)
         konular_counter = self._oturum_konulari
