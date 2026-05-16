@@ -379,6 +379,8 @@ def tetik_kelime_kontrol(text, tetik="atlas"):
     """
     Metinde tetik kelime var mı kontrol et.
     RAS (Retiküler Aktivasyon Sistemi) gibi filtrele.
+    Google STT'nin "atlas" kelimesini farklı yazabilmesi için
+    geniş varyant listesi ve bulanık eşleşme kullanır.
     
     Returns: (tetik_bulundu, temizlenmis_metin)
     """
@@ -388,22 +390,48 @@ def tetik_kelime_kontrol(text, tetik="atlas"):
     text_lower = turkce_normalize(text)
     tetik_lower = turkce_normalize(tetik)
 
-    # Tetik kelime varyantları
+    # ── Google STT'nin "atlas" için üretebileceği varyantlar ──
     varyantlar = [
-        tetik_lower,
-        tetik_lower.replace('a', '').replace('e', ''),  # sessiz harfler
+        tetik_lower,            # atlas
+        "atlaz",                # z/s karışımı
+        "atles",                # e/a karışımı
+        "atlass",               # çift s
+        "atlast",               # son t
+        "at las",               # boşluklu
+        "atla",                 # eksik s
+        "atlası",               # ekli
+        "atlasa",               # ekli
+        "atlasın",              # ekli
+        "atlasım",              # ekli
+        "atlaş",                # ş/s karışımı
     ]
 
     bulundu = False
+    eslesen = ""
     for v in varyantlar:
         if v and v in text_lower:
             bulundu = True
+            eslesen = v
             break
+
+    # ── Bulanık eşleşme — kelime bazlı kontrol ──
+    if not bulundu:
+        kelimeler = text_lower.split()
+        for kelime in kelimeler:
+            # Levenshtein benzeri hızlı kontrol
+            if len(kelime) >= 4 and len(kelime) <= 8:
+                if kelime.startswith("at") and ("la" in kelime or "le" in kelime):
+                    bulundu = True
+                    eslesen = kelime
+                    break
 
     # Tetik kelimeyi metinden çıkar
     if bulundu:
         # Orijinal metinden tetik kelimeyi kaldır
-        temiz = re.sub(r'\b' + re.escape(tetik) + r'\b', '', text, flags=re.IGNORECASE)
+        if eslesen:
+            temiz = re.sub(re.escape(eslesen), '', text_lower, count=1)
+        else:
+            temiz = re.sub(r'\b' + re.escape(tetik) + r'\b', '', text, flags=re.IGNORECASE)
         temiz = re.sub(r'\s+', ' ', temiz).strip()
         # Başındaki virgül, nokta vb temizle
         temiz = re.sub(r'^[,.\s!?]+', '', temiz).strip()
