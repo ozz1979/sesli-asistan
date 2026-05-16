@@ -171,7 +171,7 @@ KONUSMA KURALLARI:
 DOGRULUK KURALLARI (COK ONEMLI):
 - Tarihi bilgiler, bilimsel bilgiler, matematik, tarihler, burclar, cografya gibi SOMUT SORULARDA mutlaka dogru bilgi ver.
 - Emin degilsen "kesin bilmiyorum" de, ASLA uydurma.
-- Burc tarihleri: Koc(21Mar-19Nis), Boga(20Nis-20May), Ikizler(21May-20Haz), Yengec(21Haz-22Tem), Aslan(23Tem-22Agu), Basak(23Agu-22Eyl), Terazi(23Eyl-22Eki), Akrep(23Eki-21Kas), Yay(22Kas-21Ara), Oglak(22Ara-19Oca), Kova(20Oca-18Sub), Balik(19Sub-20Mar).
+- BURC HESABI YAPMA! Burc sorusu gelirse sadece "Burcunu hesapliyorum" de, sistem otomatik halleder. Sen ASLA burc hesaplama.
 - Matematik hesaplarinda dikkatli ol, yanlis sonuc verme.
 - Yanlislikla yanlis bir sey soylersen, kullanici duzeltince "haklisin, duzeltiyorum" de.
 
@@ -440,6 +440,9 @@ ATLAS: "Beni Ozgur yapti. Ben ATLAS'im, senin kisisel asistanin."
             yol = "sistem2"
             self._istatistik["sistem2_hafif"] += 1
 
+        # ──── BURÇ DÜZELTME — AI yanlış burç söylerse düzelt ────
+        ai_yanit = self._burc_duzelt(ai_yanit)
+
         # ──── KOMUT ÇALIŞTIRMA ────
         # AI yanıtında [KOMUT:...] etiketi varsa çalıştır
         if "[KOMUT:" in ai_yanit:
@@ -523,6 +526,50 @@ ATLAS: "Beni Ozgur yapti. Ben ATLAS'im, senin kisisel asistanin."
     # ══════════════════════════════════════════════════
     # YANITLARI TEMİZLEME
     # ══════════════════════════════════════════════════
+
+    def _burc_duzelt(self, yanit):
+        """AI yanıtında yanlış burç varsa deterministic olarak düzelt"""
+        try:
+            from kalip_motoru import burc_hesapla, burc_tarih_cikar, AY_ISIMLERI
+            yanit_lower = yanit.lower()
+
+            # Yanıtta burç kelimesi var mı?
+            burc_kelimeler = ["koç", "boğa", "ikizler", "yengeç", "aslan", "başak",
+                              "terazi", "akrep", "yay", "oğlak", "kova", "balık"]
+            burc_var = any(b in yanit_lower for b in burc_kelimeler)
+            if not burc_var:
+                return yanit
+
+            # Yanıttaki tarihi bul
+            sonuc = burc_tarih_cikar(yanit_lower + " burc")
+            if sonuc:
+                dogru_burc, gun, ay_adi, yil = sonuc
+            else:
+                # Hafızadan doğum tarihini al
+                dogum = self.hafiza.kullanici_bilgisi_getir("dogum_tarihi", "")
+                if dogum:
+                    sonuc = burc_tarih_cikar(dogum + " burc")
+                    if sonuc:
+                        dogru_burc = sonuc[0]
+                    else:
+                        return yanit
+                else:
+                    return yanit
+
+            # Yanlış burç varsa düzelt
+            for yanlis_burc in burc_kelimeler:
+                if yanlis_burc in yanit_lower and yanlis_burc != dogru_burc.lower():
+                    # Büyük/küçük harf uyumlu değiştir
+                    import re as re2
+                    pattern = re2.compile(re2.escape(yanlis_burc), re2.IGNORECASE)
+                    yanit = pattern.sub(dogru_burc, yanit)
+                    logger.warning(f"Burç düzeltildi: {yanlis_burc} → {dogru_burc}")
+                    break
+
+            return yanit
+        except Exception as e:
+            logger.debug(f"Burç düzeltme hatası (kritik değil): {e}")
+            return yanit
 
     def _yanit_temizle(self, yanit):
         """Uzun yanıtları kes, temizle — KOMUT etiketlerini koru"""
