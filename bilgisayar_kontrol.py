@@ -212,34 +212,75 @@ $bitmap.Dispose()
 def resim_kapat():
     """Açık resim/fotoğraf görüntüleyici uygulamalarını kapatır."""
     try:
-        # Windows'taki yaygın resim görüntüleyiciler
-        resim_programlari = [
-            "Microsoft.Photos.exe",      # Windows Fotoğraflar
-            "PhotosApp.exe",             # Windows Fotoğraflar (eski)
-            "mspaint.exe",               # Paint
-            "IrfanView.exe",             # IrfanView
-            "i_view64.exe",              # IrfanView 64-bit
-            "PhotoViewer.dll",           # Eski Windows Fotoğraf Görüntüleyici
-            "dllhost.exe",               # Bazen resim için kullanılır
-            "imageglass.exe",            # ImageGlass
-        ]
-        kapatilan = []
-        for prog in resim_programlari:
-            try:
-                result = subprocess.run(
-                    ["taskkill", "/IM", prog, "/F"],
-                    capture_output=True, timeout=5
-                )
-                if result.returncode == 0:
-                    kapatilan.append(prog.replace(".exe", ""))
-            except Exception:
-                pass
+        kapatildi = False
 
-        if kapatilan:
-            return True, f"Resim görüntüleyici kapatıldı ({', '.join(kapatilan)})"
+        # Yöntem 1: PowerShell ile resim dosyası açık pencere bul ve kapat
+        # Bu yöntem UWP uygulamaları dahil tüm pencerelerle çalışır
+        ps_script = """
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class WinHelper {
+    [DllImport("user32.dll")]
+    public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+    [DllImport("user32.dll")]
+    public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+}
+"@
 
-        # Hiçbir resim programı bulunamadıysa aktif pencereyi kapat (fallback)
+$kapatilan = 0
+# Resim uzantılarını pencere başlıklarında ara
+$procs = Get-Process | Where-Object { $_.MainWindowTitle -ne '' }
+foreach ($p in $procs) {
+    $title = $p.MainWindowTitle.ToLower()
+    if ($title -match '\\.(png|jpg|jpeg|bmp|gif|webp|tiff)' -or
+        $title -match 'photos' -or $title -match 'fotoğraf' -or
+        $title -match 'resim' -or $title -match 'ekran_') {
+        try {
+            # WM_CLOSE gönder (nazikçe kapat)
+            $hWnd = $p.MainWindowHandle
+            if ($hWnd -ne [IntPtr]::Zero) {
+                [WinHelper]::PostMessage($hWnd, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)
+                $kapatilan++
+            }
+        } catch {}
+    }
+}
+
+# Yöntem 2: Bilinen resim programlarını doğrudan kapat
+$resim_procs = @('Microsoft.Photos', 'PhotosApp', 'mspaint', 'IrfanView',
+                  'i_view64', 'imageglass', 'nomacs', 'XnView', 'FastStone')
+foreach ($name in $resim_procs) {
+    try {
+        $found = Get-Process -Name $name -ErrorAction SilentlyContinue
+        if ($found) {
+            $found | Stop-Process -Force
+            $kapatilan++
+        }
+    } catch {}
+}
+
+Write-Output $kapatilan
+"""
+        result = subprocess.run(
+            ["powershell", "-Command", ps_script],
+            capture_output=True, timeout=10, text=True
+        )
+        output = result.stdout.strip()
+        try:
+            kapatilan_sayisi = int(output)
+            if kapatilan_sayisi > 0:
+                kapatildi = True
+        except (ValueError, TypeError):
+            pass
+
+        if kapatildi:
+            return True, "Resim kapatıldı"
+
+        # Yöntem 3: Fallback — aktif pencereyi Alt+F4 ile kapat
         import pyautogui
+        import time
+        time.sleep(0.3)
         pyautogui.hotkey("alt", "F4")
         return True, "Pencere kapatıldı"
     except Exception as e:
