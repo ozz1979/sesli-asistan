@@ -9,7 +9,7 @@ echo ========================================
 echo.
 
 echo [1/2] Dosyalar guncelleniyor...
-venv\Scripts\python.exe -c "import urllib.request as u; dosyalar=['bilgisayar_kontrol.py','kalip_motoru.py','main.py','karar_merkezi.py','hafiza_sistemi.py','bilgisayar_tarama.py']; [open(f,'wb').write(u.urlopen('https://raw.githubusercontent.com/ozz1979/sesli-asistan/main/'+f).read()) for f in dosyalar]; print(str(len(dosyalar))+' DOSYA GUNCELLENDI')"
+venv\Scripts\python.exe -c "import urllib.request as u; dosyalar=['bilgisayar_kontrol.py','kalip_motoru.py','main.py','karar_merkezi.py','hafiza_sistemi.py','bilgisayar_tarama.py','ogrenme_motoru.py','bilgi_bankasi.py']; [open(f,'wb').write(u.urlopen('https://raw.githubusercontent.com/ozz1979/sesli-asistan/main/'+f).read()) for f in dosyalar]; print(str(len(dosyalar))+' DOSYA GUNCELLENDI')"
 
 echo.
 echo [2/2] Baslangic kisayolu duzeltiliyor...
