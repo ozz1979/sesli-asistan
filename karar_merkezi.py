@@ -32,11 +32,13 @@ class KararMerkezi:
     AI Zinciri: Gemini → DeepSeek → Groq → Ollama → Fallback
     """
 
-    def __init__(self, kalip_motoru, hafiza, duygu, config=None):
+    def __init__(self, kalip_motoru, hafiza, duygu, config=None, ogrenme=None, bilgi_bankasi=None):
         self.kalip = kalip_motoru
         self.hafiza = hafiza
         self.duygu = duygu
         self.config = config or {}
+        self.ogrenme = ogrenme          # Öğrenme motoru
+        self.bilgi_bankasi = bilgi_bankasi  # Bilgi bankası
         self._bilgisayar_ozeti = ""  # Tarama özeti — system prompt'a eklenir
 
         ai_cfg = self.config.get("ai", {})
@@ -480,7 +482,25 @@ ATLAS: "Beni Ozgur yapti. Ben ATLAS'im, senin kisisel asistanin."
             if duygu != "notr":
                 duygu_str = f"\nKullanıcı şu an {duygu} hissediyor."
 
-        return f"Kullanıcının adı: {ad}{son_konusmalar}{duygu_str}"
+        baglam = f"Kullanıcının adı: {ad}{son_konusmalar}{duygu_str}"
+
+        # Öğrenme motoru bağlam zenginleştirme
+        if self.ogrenme:
+            try:
+                baglam = self.ogrenme.baglam_zenginlestir(baglam)
+            except Exception:
+                pass
+
+        # Bilgi bankası — kişisel gelişim bağlamı
+        if self.bilgi_bankasi:
+            try:
+                bilgi_baglam = self.bilgi_bankasi.ai_baglam_olustur(text)
+                if bilgi_baglam:
+                    baglam = baglam + "\n\n" + bilgi_baglam
+            except Exception:
+                pass
+
+        return baglam
 
     # ══════════════════════════════════════════════════
     # YANITLARI TEMİZLEME
