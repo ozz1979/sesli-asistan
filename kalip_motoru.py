@@ -388,8 +388,15 @@ class KalipMotoru:
             logger.info(f"Burç hesaplandı: {gun} {ay_adi} → {burc}")
             return yanit_str, "burc_hesaplama", 0.99
         elif tarih_sonuc and not burc_sorumu:
-            # Tarih var ama burç sorulmamış — yine de kaydet
-            pass
+            # Tarih var ama burç sorulmamış — doğum tarihiyse kaydet
+            dogum_kontrol = any(k in text_lower for k in ["doğum", "dogum", "doğdum", "dogdum", "dünyaya geldim"])
+            if dogum_kontrol and self.hafiza:
+                burc, gun, ay_adi, yil = tarih_sonuc
+                tarih_kayit = f"{gun} {ay_adi}" + (f" {yil}" if yil else "")
+                self.hafiza.kullanici_bilgisi_kaydet("dogum_tarihi", tarih_kayit)
+                ad = self.hafiza.kullanici_bilgisi_getir("ad", "")
+                yanit_str = f"Tamam, doğum tarihini kaydettim{', ' + ad if ad else ''}. Burcun {burc} burcu."
+                return yanit_str, "dogum_tarihi_kaydet", 0.95
         elif burc_sorumu and not tarih_sonuc:
             # "burcum ne" dedi ama tarih vermedi — hafızadan bak
             if self.hafiza:
@@ -460,11 +467,41 @@ class KalipMotoru:
                     return f"Ses ayarlanamadı: {mesaj}", "hata", 0.9
 
         # ── 2. Ekran görüntüsü ──
-        ekran_tetik = any(k in metin for k in ["ekran görüntüsü", "ekran goruntusu", "screenshot", "ekran al"])
+        ekran_tetik = any(k in metin for k in ["ekran görüntüsü", "ekran goruntusu", "screenshot", "ekran al",
+                                                 "ekran görüntüsü al", "ekran yakala", "ekranı yakala"])
         if ekran_tetik:
-            # "göster" varsa son ekran görüntüsünü aç, "al" varsa yenisini çek
-            if any(k in metin for k in ["göster", "goster", "aç", "ac", "bak"]):
-                # Son ekran görüntüsünü masaüstünden bul ve aç
+            al_istegi = any(k in metin for k in ["al", "çek", "cek", "yakala", "kaydet"])
+            goster_istegi = any(k in metin for k in ["göster", "goster", "bak", "aç", "ac"])
+
+            # "al ve göster" → önce al, sonra göster
+            if al_istegi and goster_istegi:
+                basarili, mesaj = bk.ekran_goruntusu()
+                if basarili:
+                    import glob as g
+                    import os
+                    import time as t
+                    t.sleep(0.5)
+                    masaustu = os.path.expanduser("~\\Desktop")
+                    dosyalar = sorted(g.glob(os.path.join(masaustu, "ekran_*.png")), reverse=True)
+                    if dosyalar:
+                        try:
+                            os.startfile(dosyalar[0])
+                        except Exception:
+                            pass
+                    return f"Ekran görüntüsünü aldım ve açıyorum {ad}.", "ekran_goruntusu", 0.95
+                else:
+                    return f"Ekran görüntüsü alınamadı: {mesaj}", "hata", 0.9
+
+            # Sadece "al" → yeni ekran görüntüsü çek
+            elif al_istegi or (not goster_istegi):
+                basarili, mesaj = bk.ekran_goruntusu()
+                if basarili:
+                    return f"{mesaj} {ad}.", "ekran_goruntusu", 0.95
+                else:
+                    return f"Ekran görüntüsü alınamadı: {mesaj}", "hata", 0.9
+
+            # Sadece "göster" → mevcut olanı aç
+            else:
                 import glob as g
                 import os
                 masaustu = os.path.expanduser("~\\Desktop")
@@ -475,13 +512,7 @@ class KalipMotoru:
                         return f"Son ekran görüntüsünü açıyorum {ad}.", "ekran_goster", 0.95
                     except Exception:
                         pass
-                return f"Masaüstünde ekran görüntüsü bulamadım {ad}.", "hata", 0.9
-            else:
-                basarili, mesaj = bk.ekran_goruntusu()
-                if basarili:
-                    return f"{mesaj} {ad}.", "ekran_goruntusu", 0.95
-                else:
-                    return f"Ekran görüntüsü alınamadı: {mesaj}", "hata", 0.9
+                return f"Masaüstünde ekran görüntüsü bulamadım {ad}. Önce 'ekran görüntüsü al' de.", "hata", 0.9
 
         # ── 3. Klasör açma komutları ──
         if "masaüstü" in metin or "masaustu" in metin_norm:
