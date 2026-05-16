@@ -410,6 +410,55 @@ class KalipMotoru:
                         yanit_str = f"Senin doğum tarihin {dogum}, burcun {burc} burcu{', ' + ad if ad else ''}."
                         return yanit_str, "burc_hesaplama", 0.99
 
+        # ──── 0b. KİŞİSEL BİLGİ SORGULARI (hafızadan cevapla) ────
+        if self.hafiza:
+            soru_mu = any(k in text_lower for k in ["ne", "nedir", "kaç", "kim", "nere", "söyle", "hatırlıyor musun", "biliyor musun"])
+            if soru_mu:
+                ad = self.hafiza.kullanici_bilgisi_getir("ad", "")
+                # Doğum tarihi sorusu
+                if any(k in text_lower for k in ["doğum tarihi", "dogum tarihi", "doğum günü", "dogum gunu",
+                                                   "doğum günüm", "doğum tarihim", "dogum tarihim",
+                                                   "ne zaman doğdum", "ne zaman dogdum"]):
+                    dogum = self.hafiza.kullanici_bilgisi_getir("dogum_tarihi", "")
+                    if dogum:
+                        tarih_sonuc2 = burc_tarih_cikar(f"{dogum} burcum")
+                        if tarih_sonuc2:
+                            burc, gun, ay_adi, yil = tarih_sonuc2
+                            return f"Senin doğum tarihin {dogum}, burcun {burc} burcu{', ' + ad if ad else ''}.", "hafiza_sorgulama", 0.99
+                        return f"Senin doğum tarihin {dogum}{', ' + ad if ad else ''}.", "hafiza_sorgulama", 0.99
+                    else:
+                        return f"Doğum tarihini henüz bilmiyorum{', ' + ad if ad else ''}. Söylersen kaydedeyim!", "hafiza_sorgulama", 0.9
+
+                # Yaş sorusu
+                if any(k in text_lower for k in ["kaç yaşında", "kac yasinda", "yaşım", "yasim", "yaşım kaç", "yasim kac"]):
+                    yas = self.hafiza.kullanici_bilgisi_getir("yas", "")
+                    if yas:
+                        return f"Sen {yas} yaşındasın{', ' + ad if ad else ''}.", "hafiza_sorgulama", 0.99
+                    dogum = self.hafiza.kullanici_bilgisi_getir("dogum_tarihi", "")
+                    if dogum:
+                        return f"Doğum tarihin {dogum}{', ' + ad if ad else ''}.", "hafiza_sorgulama", 0.9
+                    return f"Yaşını henüz bilmiyorum{', ' + ad if ad else ''}. Söylersen kaydedeyim!", "hafiza_sorgulama", 0.9
+
+                # İsim sorusu
+                if any(k in text_lower for k in ["adım ne", "adim ne", "ismim ne", "ismim nedir", "benim adım"]):
+                    if ad:
+                        return f"Senin adın {ad}.", "hafiza_sorgulama", 0.99
+                    return "Adını henüz bilmiyorum. Söylersen kaydedeyim!", "hafiza_sorgulama", 0.9
+
+                # Şehir sorusu
+                if any(k in text_lower for k in ["nerede yaşıyorum", "nerede yasiyorum", "şehrim", "sehrim", "hangi şehir"]):
+                    sehir = self.hafiza.kullanici_bilgisi_getir("sehir", "")
+                    if sehir:
+                        return f"Sen {sehir}'da yaşıyorsun{', ' + ad if ad else ''}.", "hafiza_sorgulama", 0.99
+                    return f"Hangi şehirde yaşadığını bilmiyorum{', ' + ad if ad else ''}. Söylersen kaydedeyim!", "hafiza_sorgulama", 0.9
+
+                # Meslek sorusu
+                if any(k in text_lower for k in ["mesleğim", "meslegim", "ne iş yapıyorum", "ne is yapiyorum", "işim ne", "isim ne"]):
+                    meslek = self.hafiza.kullanici_bilgisi_getir("meslek", "")
+                    if meslek:
+                        return f"Senin mesleğin {meslek}{', ' + ad if ad else ''}.", "hafiza_sorgulama", 0.99
+                    return f"Mesleğini henüz bilmiyorum{', ' + ad if ad else ''}. Söylersen kaydedeyim!", "hafiza_sorgulama", 0.9
+
         # ──── 1. BİLGİSAYAR KOMUTLARI (en yüksek öncelik) ────
         yanit, kat, guven = self._bilgisayar_komutu_kontrol(text_lower, text_norm)
         if yanit:
