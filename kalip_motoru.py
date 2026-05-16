@@ -419,7 +419,50 @@ class KalipMotoru:
                 basarili, mesaj = bk.indirilenler_ac()
                 return f"İndirilenler açılıyor {ad}!", "klasor_ac", 0.95 if basarili else 0.5
 
-        # ── 4. Web arama ──
+        # ── 4. Hava durumu ──
+        hava_kalip = re.search(
+            r"(?:hava\s*durumu|hava\s*nas[ıi]l|hava\s*ne\s*durumda|hava\s*ne\s*olacak|hava\s*raporu)",
+            metin
+        )
+        if hava_kalip or ("hava" in metin and any(k in metin for k in ["nasıl", "nasil", "kaç derece", "kac derece", "söyle", "soyle", "sıcaklık", "sicaklik"])):
+            # Şehir adı bul — varsa kullan, yoksa Denizli
+            sehir = "Denizli"
+            # Bilinen Türkiye şehirleri
+            sehirler = [
+                "istanbul", "ankara", "izmir", "denizli", "antalya", "bursa",
+                "adana", "konya", "gaziantep", "mersin", "kayseri", "eskişehir",
+                "diyarbakır", "samsun", "trabzon", "malatya", "erzurum", "van",
+                "muğla", "aydın", "manisa", "balıkesir", "tekirdağ", "hatay",
+                "sakarya", "kahramanmaraş", "afyon", "şanlıurfa", "elazığ",
+                "mardin", "bolu", "düzce", "edirne", "çanakkale", "bodrum",
+                "alanya", "fethiye", "marmaris", "kuşadası", "çeşme", "pamukkale",
+            ]
+            metin_lower = metin.lower()
+            for s in sehirler:
+                s_norm = turkce_normalize(s)
+                if s in metin_lower or s_norm in turkce_normalize(metin_lower):
+                    sehir = s.title()
+                    break
+
+            # "göster" varsa → tarayıcıda aç
+            if any(k in metin for k in ["göster", "goster", "ara", "bak", "internette"]):
+                basarili, mesaj = bk.web_ara(f"{sehir} hava durumu")
+                if basarili:
+                    return f"{sehir} hava durumunu gösteriyorum {ad}.", "hava_goster", 0.95
+
+            # "söyle" veya varsayılan → sesli cevap
+            basarili, veri = bk.hava_durumu(sehir)
+            if basarili:
+                return (
+                    f"{veri['sehir']}'de hava {veri['durum'].lower()}, "
+                    f"sıcaklık {veri['sicaklik']} derece, "
+                    f"hissedilen {veri['hissedilen']} derece {ad}.",
+                    "hava_durumu", 0.95
+                )
+            else:
+                return f"Hava durumunu şu an öğrenemedim {ad}, interneti kontrol eder misin?", "hata", 0.85
+
+        # ── 5. Web arama ──
         m = re.search(r"(?:internette?|google.?da|web.?de|araştır)\s+(.+?)(?:\s+ara)?$", metin)
         if not m:
             m = re.search(r"(.+?)\s+(?:ara|arat|araştır)$", metin)
