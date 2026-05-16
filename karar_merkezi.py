@@ -203,6 +203,8 @@ KURALLAR:
 - Komut etiketini yanitin SONUNA yaz. Kullanici etiketi duymaz.
 - Sohbet mesajlarinda etiket KULLANMA.
 - TEHLIKELI komutlar YASAK: format, del, rmdir, shutdown, reg delete.
+- Kullanici "resmi kapat", "fotografı kapat" derse [KOMUT:pencere:kapat] kullan, ASLA bilgisayari kapatma.
+- Bilgisayari kapatma komutu SADECE kullanici acikca "bilgisayarı kapat" dediginde kullanilabilir.
 - Birden fazla komut olabilir: "Aciyorum! [KOMUT:calistir:notepad] [KOMUT:yaz:merhaba]"
 
 ORNEK DIYALOGLAR:
