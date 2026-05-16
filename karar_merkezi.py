@@ -466,6 +466,17 @@ ATLAS: "Beni Ozgur yapti. Ben ATLAS'im, senin kisisel asistanin."
         """AI'a gönderilecek bağlam prompt'u — kısa ve öz"""
         ad = self.hafiza.kullanici_bilgisi_getir("ad", "")
 
+        # Semantik bellekten tüm kullanıcı bilgilerini çek
+        kullanici_bilgileri = ""
+        try:
+            bilgiler = self.hafiza.semantik.kategori_getir("kullanici")
+            ekstra = {k: v for k, v in bilgiler.items() if k != "ad" and v}
+            if ekstra:
+                satirlar = [f"  - {k}: {v}" for k, v in ekstra.items()]
+                kullanici_bilgileri = "\nBilinen bilgiler:\n" + "\n".join(satirlar)
+        except Exception:
+            pass
+
         son_konusmalar = ""
         try:
             calisma = self.hafiza.calisma.getir()
@@ -489,7 +500,7 @@ ATLAS: "Beni Ozgur yapti. Ben ATLAS'im, senin kisisel asistanin."
             if duygu != "notr":
                 duygu_str = f"\nKullanıcı şu an {duygu} hissediyor."
 
-        baglam = f"Kullanıcının adı: {ad}{son_konusmalar}{duygu_str}"
+        baglam = f"Kullanıcının adı: {ad}{kullanici_bilgileri}{son_konusmalar}{duygu_str}"
 
         # Öğrenme motoru bağlam zenginleştirme
         if self.ogrenme:
