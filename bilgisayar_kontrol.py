@@ -384,3 +384,58 @@ def bilgisayar_bilgisi():
         return True, bilgi
     except Exception as e:
         return False, str(e)
+
+
+# ============================================================
+# HAVA DURUMU (wttr.in - ücretsiz, API key gerektirmez)
+# ============================================================
+
+def hava_durumu(sehir="Denizli"):
+    """
+    wttr.in API ile hava durumu sorgula.
+    Returns: (True, dict) veya (False, hata_mesajı)
+    """
+    import urllib.request
+    import json as j
+
+    try:
+        # Türkçe şehir adını URL-safe yap
+        sehir_url = sehir.replace(" ", "+").replace("ı", "i").replace("ş", "s")
+        sehir_url = sehir_url.replace("ç", "c").replace("ü", "u").replace("ö", "o")
+        sehir_url = sehir_url.replace("ğ", "g").replace("İ", "I").replace("Ş", "S")
+        sehir_url = sehir_url.replace("Ç", "C").replace("Ü", "U").replace("Ö", "O")
+        sehir_url = sehir_url.replace("Ğ", "G")
+
+        url = f"https://wttr.in/{sehir_url}?format=j1&lang=tr"
+        req = urllib.request.Request(url, headers={"User-Agent": "ATLAS/1.0"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = j.loads(resp.read().decode("utf-8"))
+
+        current = data.get("current_condition", [{}])[0]
+        sicaklik = current.get("temp_C", "?")
+        hissedilen = current.get("FeelsLikeC", "?")
+        nem = current.get("humidity", "?")
+        ruzgar = current.get("windspeedKmph", "?")
+
+        # Türkçe hava açıklaması
+        aciklama_tr = current.get("lang_tr", [{}])
+        if aciklama_tr:
+            durum = aciklama_tr[0].get("value", "Bilinmiyor")
+        else:
+            durum = current.get("weatherDesc", [{}])[0].get("value", "Bilinmiyor")
+
+        sonuc = {
+            "sehir": sehir,
+            "sicaklik": sicaklik,
+            "hissedilen": hissedilen,
+            "durum": durum,
+            "nem": nem,
+            "ruzgar": ruzgar,
+        }
+
+        logger.info(f"Hava durumu: {sehir} → {sicaklik}°C, {durum}")
+        return True, sonuc
+
+    except Exception as e:
+        logger.error(f"Hava durumu hatası: {e}")
+        return False, str(e)
