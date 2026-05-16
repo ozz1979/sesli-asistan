@@ -36,7 +36,7 @@ class DikkatFiltresi:
         dikkat_cfg = config.get("dikkat", {})
 
         self._tetik_kelime = config.get("tetik_kelime", "atlas")
-        self._aktif_sure = dikkat_cfg.get("aktif_mod_suresi", 45)  # saniye
+        self._aktif_sure = dikkat_cfg.get("aktif_mod_suresi", 60)  # saniye
         self._pasif_dinleme = dikkat_cfg.get("pasif_dinleme", True)
 
         self._mod = DikkatModu.PASIF
