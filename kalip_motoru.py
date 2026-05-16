@@ -515,14 +515,14 @@ class KalipMotoru:
                 return f"Masaüstünde ekran görüntüsü bulamadım {ad}. Önce 'ekran görüntüsü al' de.", "hata", 0.9
 
         # ── 2.5. Resim/fotoğraf kapatma ──
-        resim_kapat_tetik = any(k in metin for k in [
-            "resmi kapat", "resimi kapat", "fotoğrafı kapat", "fotografı kapat",
-            "fotoğraf kapat", "fotograf kapat", "resim kapat",
-            "görüntüyü kapat", "goruntüyü kapat", "görsel kapat",
-            "resimleri kapat", "fotoğrafları kapat",
-            "ekran görüntüsünü kapat", "ekran goruntusu kapat",
-        ])
-        if resim_kapat_tetik:
+        resim_kelimeleri = ["resmi", "resim", "resimi", "fotoğrafı", "fotografı",
+                            "fotoğraf", "fotograf", "görüntüyü", "goruntüyü",
+                            "görsel", "resimleri", "fotoğrafları"]
+        kapat_kelimeleri = ["kapat", "kapa", "kapatsana", "kapatır mısın",
+                            "kapatırmısın", "kapat"]
+        resim_var = any(k in metin for k in resim_kelimeleri)
+        kapat_var = any(k in metin for k in kapat_kelimeleri)
+        if resim_var and kapat_var:
             basarili, mesaj = bk.resim_kapat()
             if basarili:
                 return f"Resim kapatıldı {ad}.", "resim_kapat", 0.95
