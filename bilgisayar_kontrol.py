@@ -158,20 +158,38 @@ def web_ac(url):
 
 
 def ekran_goruntusu():
-    """Ekran görüntüsü alır, masaüstüne kaydeder. PowerShell kullanır (Pillow gerekmez)."""
+    """Ekran görüntüsü alır, masaüstüne kaydeder. DPI-aware — tam çözünürlük yakalar."""
     try:
         from datetime import datetime
         masaustu = os.path.expanduser("~\\Desktop")
         dosya = os.path.join(masaustu, f"ekran_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
         dosya_ps = dosya.replace("\\", "\\\\")
 
+        # DPI-aware ekran görüntüsü — gerçek piksel çözünürlüğü kullanır
         ps_script = f"""
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
-$screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-$bitmap = New-Object System.Drawing.Bitmap($screen.Width, $screen.Height)
+
+# DPI farkındalığı etkinleştir — tam çözünürlük yakala
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class DpiHelper {{
+    [DllImport("user32.dll")]
+    public static extern bool SetProcessDPIAware();
+    [DllImport("user32.dll")]
+    public static extern int GetSystemMetrics(int nIndex);
+}}
+"@
+[DpiHelper]::SetProcessDPIAware()
+
+# Gerçek fiziksel çözünürlüğü al
+$width = [DpiHelper]::GetSystemMetrics(0)   # SM_CXSCREEN
+$height = [DpiHelper]::GetSystemMetrics(1)  # SM_CYSCREEN
+
+$bitmap = New-Object System.Drawing.Bitmap($width, $height)
 $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-$graphics.CopyFromScreen($screen.Location, [System.Drawing.Point]::Empty, $screen.Size)
+$graphics.CopyFromScreen(0, 0, 0, 0, (New-Object System.Drawing.Size($width, $height)))
 $bitmap.Save("{dosya_ps}")
 $graphics.Dispose()
 $bitmap.Dispose()
@@ -188,6 +206,43 @@ $bitmap.Dispose()
             return False, "Ekran görüntüsü kaydedilemedi"
     except Exception as e:
         logger.error(f"Ekran görüntüsü hatası: {e}")
+        return False, str(e)
+
+
+def resim_kapat():
+    """Açık resim/fotoğraf görüntüleyici uygulamalarını kapatır."""
+    try:
+        # Windows'taki yaygın resim görüntüleyiciler
+        resim_programlari = [
+            "Microsoft.Photos.exe",      # Windows Fotoğraflar
+            "PhotosApp.exe",             # Windows Fotoğraflar (eski)
+            "mspaint.exe",               # Paint
+            "IrfanView.exe",             # IrfanView
+            "i_view64.exe",              # IrfanView 64-bit
+            "PhotoViewer.dll",           # Eski Windows Fotoğraf Görüntüleyici
+            "dllhost.exe",               # Bazen resim için kullanılır
+            "imageglass.exe",            # ImageGlass
+        ]
+        kapatilan = []
+        for prog in resim_programlari:
+            try:
+                result = subprocess.run(
+                    ["taskkill", "/IM", prog, "/F"],
+                    capture_output=True, timeout=5
+                )
+                if result.returncode == 0:
+                    kapatilan.append(prog.replace(".exe", ""))
+            except Exception:
+                pass
+
+        if kapatilan:
+            return True, f"Resim görüntüleyici kapatıldı ({', '.join(kapatilan)})"
+
+        # Hiçbir resim programı bulunamadıysa aktif pencereyi kapat (fallback)
+        import pyautogui
+        pyautogui.hotkey("alt", "F4")
+        return True, "Pencere kapatıldı"
+    except Exception as e:
         return False, str(e)
 
 
