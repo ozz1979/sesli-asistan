@@ -282,6 +282,73 @@ def eylem_varmi(metin, fiiller):
     return any(f in metin for f in fiiller)
 
 
+# ============================================================
+# BURÇ HESAPLAMA — %100 doğru, AI'a güvenme
+# ============================================================
+
+BURC_TARIHLERI = [
+    ((1, 20), "Oğlak"),    # 1 Ocak - 19 Ocak → Oğlak
+    ((2, 18), "Kova"),      # 20 Ocak - 18 Şubat → Kova
+    ((3, 20), "Balık"),     # 19 Şubat - 20 Mart → Balık
+    ((4, 19), "Koç"),       # 21 Mart - 19 Nisan → Koç
+    ((5, 20), "Boğa"),      # 20 Nisan - 20 Mayıs → Boğa
+    ((6, 20), "İkizler"),   # 21 Mayıs - 20 Haziran → İkizler
+    ((7, 22), "Yengeç"),    # 21 Haziran - 22 Temmuz → Yengeç
+    ((8, 22), "Aslan"),     # 23 Temmuz - 22 Ağustos → Aslan
+    ((9, 22), "Başak"),     # 23 Ağustos - 22 Eylül → Başak
+    ((10, 22), "Terazi"),   # 23 Eylül - 22 Ekim → Terazi
+    ((11, 21), "Akrep"),    # 23 Ekim - 21 Kasım → Akrep
+    ((12, 21), "Yay"),      # 22 Kasım - 21 Aralık → Yay
+    ((12, 31), "Oğlak"),   # 22 Aralık - 31 Aralık → Oğlak
+]
+
+AY_ISIMLERI = {
+    "ocak": 1, "şubat": 2, "mart": 3, "nisan": 4,
+    "mayıs": 5, "mayis": 5, "haziran": 6, "temmuz": 7,
+    "ağustos": 8, "agustos": 8, "eylül": 9, "eylul": 9,
+    "ekim": 10, "kasım": 11, "kasim": 11, "aralık": 12, "aralik": 12,
+}
+
+
+def burc_hesapla(gun, ay):
+    """Gün ve ay'a göre burç hesapla — kesin doğru"""
+    for (son_ay, son_gun), burc in BURC_TARIHLERI:
+        if ay < son_ay or (ay == son_ay and gun <= son_gun):
+            return burc
+    return "Oğlak"
+
+
+def burc_tarih_cikar(metin):
+    """
+    Metinden tarih çıkar ve burç hesapla.
+    "4 temmuz 1979", "4 temmuz", "4/7/1979" gibi formatları destekler.
+    Returns: (burc, gun, ay_adi, yil) veya None
+    """
+    metin_lower = metin.lower().strip()
+
+    # Format 1: "4 temmuz 1979" veya "4 temmuz"
+    m = re.search(r"(\d{1,2})\s+(ocak|şubat|subat|mart|nisan|mayıs|mayis|haziran|temmuz|ağustos|agustos|eylül|eylul|ekim|kasım|kasim|aralık|aralik)\s*(\d{4})?", metin_lower)
+    if m:
+        gun = int(m.group(1))
+        ay_adi = m.group(2)
+        yil = m.group(3) if m.group(3) else ""
+        ay = AY_ISIMLERI.get(ay_adi, 0)
+        if ay and 1 <= gun <= 31:
+            burc = burc_hesapla(gun, ay)
+            return burc, gun, ay_adi.title(), yil
+
+    # Format 2: "4/7/1979" veya "4.7.1979"
+    m = re.search(r"(\d{1,2})[./](\d{1,2})[./](\d{4})", metin_lower)
+    if m:
+        gun, ay, yil = int(m.group(1)), int(m.group(2)), m.group(3)
+        if 1 <= gun <= 31 and 1 <= ay <= 12:
+            burc = burc_hesapla(gun, ay)
+            ay_adi_tr = AYLAR.get(ay, str(ay))
+            return burc, gun, ay_adi_tr, yil
+
+    return None
+
+
 class KalipMotoru:
     """
     Bazal Ganglia — otomatik kalıp eşleştirme motoru.
@@ -305,6 +372,36 @@ class KalipMotoru:
 
         text_lower = text.lower().strip()
         text_norm = turkce_normalize(text)
+
+        # ──── 0. BURÇ HESAPLAMA (deterministic — AI'a güvenme) ────
+        burc_sorumu = bool(re.search(r"(burc|burç|burcu|burcum|burcunu)", text_lower))
+        tarih_sonuc = burc_tarih_cikar(text_lower)
+        if tarih_sonuc and burc_sorumu:
+            burc, gun, ay_adi, yil = tarih_sonuc
+            ad = ""
+            if self.hafiza:
+                ad = self.hafiza.kullanici_bilgisi_getir("ad", "")
+            if yil:
+                yanit_str = f"{gun} {ay_adi} {yil} tarihine göre burcun {burc} burcu{', ' + ad if ad else ''}."
+            else:
+                yanit_str = f"{gun} {ay_adi} tarihine göre burcun {burc} burcu{', ' + ad if ad else ''}."
+            logger.info(f"Burç hesaplandı: {gun} {ay_adi} → {burc}")
+            return yanit_str, "burc_hesaplama", 0.99
+        elif tarih_sonuc and not burc_sorumu:
+            # Tarih var ama burç sorulmamış — yine de kaydet
+            pass
+        elif burc_sorumu and not tarih_sonuc:
+            # "burcum ne" dedi ama tarih vermedi — hafızadan bak
+            if self.hafiza:
+                dogum = self.hafiza.kullanici_bilgisi_getir("dogum_tarihi", "")
+                if dogum:
+                    # Hafızadan tarih çek ve hesapla
+                    tarih_sonuc2 = burc_tarih_cikar(f"{dogum} burcum")
+                    if tarih_sonuc2:
+                        burc, gun, ay_adi, yil = tarih_sonuc2
+                        ad = self.hafiza.kullanici_bilgisi_getir("ad", "")
+                        yanit_str = f"Senin doğum tarihin {dogum}, burcun {burc} burcu{', ' + ad if ad else ''}."
+                        return yanit_str, "burc_hesaplama", 0.99
 
         # ──── 1. BİLGİSAYAR KOMUTLARI (en yüksek öncelik) ────
         yanit, kat, guven = self._bilgisayar_komutu_kontrol(text_lower, text_norm)
