@@ -323,13 +323,13 @@ class AtlasBeyin:
         saat = datetime.now().hour
 
         if saat < 6:
-            selamlama = f"İyi geceler {ad}! Geç saatte mi çalışıyorsun?"
+            selamlama = f"İyi geceler {ad}, senin için ne yapabilirim?"
         elif saat < 12:
-            selamlama = f"Günaydın {ad}! ATLAS hazır, seni dinliyorum."
+            selamlama = f"Günaydın {ad}, senin için ne yapabilirim?"
         elif saat < 18:
-            selamlama = f"İyi günler {ad}! ATLAS hazır, nasıl yardımcı olabilirim?"
+            selamlama = f"Merhaba {ad}, senin için ne yapabilirim?"
         else:
-            selamlama = f"İyi akşamlar {ad}! ATLAS hazır, seni dinliyorum."
+            selamlama = f"Merhaba {ad}, senin için ne yapabilirim?"
 
         self._gui_mesaj("asistan", selamlama)
         self.konusma.konus(selamlama)
