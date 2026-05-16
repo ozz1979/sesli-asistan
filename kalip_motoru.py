@@ -514,6 +514,21 @@ class KalipMotoru:
                         pass
                 return f"Masaüstünde ekran görüntüsü bulamadım {ad}. Önce 'ekran görüntüsü al' de.", "hata", 0.9
 
+        # ── 2.5. Resim/fotoğraf kapatma ──
+        resim_kapat_tetik = any(k in metin for k in [
+            "resmi kapat", "resimi kapat", "fotoğrafı kapat", "fotografı kapat",
+            "fotoğraf kapat", "fotograf kapat", "resim kapat",
+            "görüntüyü kapat", "goruntüyü kapat", "görsel kapat",
+            "resimleri kapat", "fotoğrafları kapat",
+            "ekran görüntüsünü kapat", "ekran goruntusu kapat",
+        ])
+        if resim_kapat_tetik:
+            basarili, mesaj = bk.resim_kapat()
+            if basarili:
+                return f"Resim kapatıldı {ad}.", "resim_kapat", 0.95
+            else:
+                return f"Resim kapatılamadı: {mesaj}", "hata", 0.9
+
         # ── 3. Klasör açma komutları ──
         if "masaüstü" in metin or "masaustu" in metin_norm:
             # Yeni klasör oluşturma: "masaüstünde yeni klasör aç/oluştur"
