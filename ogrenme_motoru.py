@@ -422,6 +422,14 @@ class OgrenmeMotoru:
     # 3. BİLGİ ÇIKARMA — Konuşmadan bilgi öğren
     # ============================================================
 
+    def _semantik_kaydet(self, anahtar, deger):
+        """Hafıza sisteminin semantik belleğine de kaydet (kalıcı)"""
+        if self.hafiza:
+            try:
+                self.hafiza.kullanici_bilgisi_kaydet(anahtar, deger)
+            except Exception:
+                pass
+
     def _bilgi_cikar(self, mesaj):
         """Kullanıcının mesajından kişisel bilgi çıkar ve kaydet"""
         mesaj_lower = mesaj.lower().strip()
@@ -450,6 +458,22 @@ class OgrenmeMotoru:
             yas = int(m.group(1))
             if 5 < yas < 120:
                 self.bellek.bilgiler["kullanici_hakkinda"]["yas"] = yas
+
+        # Doğum tarihi öğrenme
+        # "4 temmuz 1979", "doğum tarihim 4 temmuz", "4/7/1979" vb.
+        aylar = {"ocak":"01","şubat":"02","mart":"03","nisan":"04","mayıs":"05",
+                 "haziran":"06","temmuz":"07","ağustos":"08","eylül":"09",
+                 "ekim":"10","kasım":"11","aralık":"12"}
+        m = re.search(r"(\d{1,2})\s+(ocak|şubat|mart|nisan|mayıs|haziran|temmuz|ağustos|eylül|ekim|kasım|aralık)\s*(\d{4})?", mesaj_lower)
+        if m:
+            gun, ay_ad = m.group(1), m.group(2)
+            yil = m.group(3) if m.group(3) else ""
+            tarih_str = f"{gun} {ay_ad.title()}" + (f" {yil}" if yil else "")
+            self.bellek.bilgiler["kullanici_hakkinda"]["dogum_tarihi"] = tarih_str
+        # Sayısal format: 4/7/1979
+        m2 = re.search(r"(\d{1,2})[./](\d{1,2})[./](\d{4})", mesaj_lower)
+        if m2:
+            self.bellek.bilgiler["kullanici_hakkinda"]["dogum_tarihi"] = f"{m2.group(1)}/{m2.group(2)}/{m2.group(3)}"
 
         # Hobi öğrenme
         m = re.search(r"(?:hobim|hobilerim|severim|seviyorum)\s+(.+?)(?:\.|$)", mesaj_lower)
