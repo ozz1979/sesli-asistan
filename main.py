@@ -309,17 +309,11 @@ class AtlasBeyin:
                             self.konusma.konus(tekrar)
                             continue
 
-                # Onay alınamadı — yine de kaydet
-                self.kimlik.kullanici_kaydet(isim)
-                self.config.setdefault("kullanici", {})["ad"] = isim
-                config_kaydet(self.config)
-
-                mesaj = f"Tamam {isim}, memnun oldum! Bana 'Atlas' diye seslenebilirsin."
-                self._gui_mesaj("asistan", mesaj)
-                self.konusma.konus(mesaj)
-                self.dikkat.mod = DikkatModu.AKTIF
-                self._gui_mod("aktif")
-                return
+                # Onay alınamadı — kaydetme, tekrar dene
+                tekrar = "Duyamadım, tekrar söyler misin? Adın ne?"
+                self._gui_mesaj("asistan", tekrar)
+                self.konusma.konus(tekrar)
+                continue
 
         # 3 denemede isim alınamadı
         self._gui_mesaj("asistan", "Şu an adını anlayamadım ama sorun değil. Daha sonra tekrar deneriz. Bana 'Atlas' diye seslenebilirsin!")
