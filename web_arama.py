@@ -179,6 +179,45 @@ def duckduckgo_ara(sorgu, max_sonuc=5):
         except Exception as e:
             logger.debug(f"DuckDuckGo HTML arama hatasi: {e}")
 
+    # 3. Wikipedia Turkce fallback (eger hala az sonuc varsa)
+    if len(sonuclar) < 2:
+        try:
+            wiki_sorgu = urllib.parse.quote(sorgu)
+            wiki_url = f"https://tr.wikipedia.org/api/rest_v1/page/summary/{wiki_sorgu}"
+            wiki_icerik = _url_getir(wiki_url, timeout=5)
+            if wiki_icerik:
+                wiki_data = json.loads(wiki_icerik)
+                wiki_ozet = wiki_data.get("extract", "")
+                wiki_baslik = wiki_data.get("title", sorgu)
+                if wiki_ozet and len(wiki_ozet) > 30:
+                    sonuclar.append({
+                        "baslik": wiki_baslik,
+                        "url": wiki_data.get("content_urls", {}).get("desktop", {}).get("page", ""),
+                        "ozet": wiki_ozet[:500],
+                        "kaynak": "wikipedia_tr"
+                    })
+        except Exception as e:
+            logger.debug(f"Wikipedia fallback hatasi: {e}")
+
+    # 4. Wikipedia EN fallback (Turkce yoksa)
+    if len(sonuclar) < 1:
+        try:
+            wiki_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{wiki_sorgu}"
+            wiki_icerik = _url_getir(wiki_url, timeout=5)
+            if wiki_icerik:
+                wiki_data = json.loads(wiki_icerik)
+                wiki_ozet = wiki_data.get("extract", "")
+                wiki_baslik = wiki_data.get("title", sorgu)
+                if wiki_ozet and len(wiki_ozet) > 30:
+                    sonuclar.append({
+                        "baslik": wiki_baslik,
+                        "url": wiki_data.get("content_urls", {}).get("desktop", {}).get("page", ""),
+                        "ozet": wiki_ozet[:500],
+                        "kaynak": "wikipedia_en"
+                    })
+        except Exception as e:
+            logger.debug(f"Wikipedia EN fallback hatasi: {e}")
+
     # Tekrar eden sonuclari kaldir
     gorulen = set()
     benzersiz = []
@@ -233,7 +272,7 @@ def sayfa_oku(url, max_karakter=2000):
 # AKILLI ARAMA — AI İÇİN BAĞLAM OLUŞTUR
 # ═════════════════════════════════════════════════════════
 
-def arastir(sorgu, detayli=False):
+def arastir(sorgu, detayli=True):
     """
     Ana arastirma fonksiyonu.
     1. DuckDuckGo'da ara
@@ -303,62 +342,105 @@ def arama_gerekli_mi(metin):
     Returns: (gerekli: bool, sorgu: str veya None)
 
     Gerekli olan durumlar:
-    - Guncel bilgi (fiyat, haber, skor, hava durumu)
+    - Guncel bilgi (fiyat, haber, skor, hava durumu, deprem, nufus)
     - "arastir", "bul", "nedir" gibi arastirma niyeti
     - Nadir/spesifik bilgi sorulari
-    - "kimdir", "ne zaman", "nerede" gibi ansiklopedik sorular
+    - "kimdir", "ne zaman", "nerede", "kac", "nasil" gibi ansiklopedik sorular
+    - "son X" gibi guncel durum sorulari
 
     Gerekli OLMAYAN durumlar:
     - Sohbet ("nasilsin", "merhaba")
-    - Komut ("chrome ac", "sesi kapat")
+    - Komut ("chrome ac", "sesi kapat", "muzik ac")
     - Basit matematik
     - Kisisel bilgi ("adim ne")
     """
     metin_lower = metin.lower().strip()
 
+    # 0. Once kesinlikle ARAMA GEREKTIRMEYEN durumlar (erken cikis)
+    # Komutlar, sohbet, kisisel sorular
+    komut_kelimeleri = [
+        r"^(?:aç|ac|kapat|kapa|başlat|baslat|çalıştır|calistir|durdur|küçült|kucult|büyüt|buyut)",
+        r"(?:sesi?|sesini?|parlakl|parlaklik|ekran[ıi]?)\s*(?:aç|ac|kapat|kapa|art|azalt|ayarla|düşür|dusur|yükselt|yukselt)",
+        r"^(?:merhaba|selam|hey|günaydın|gunaydin|iyi\s*(?:geceler|aksamlar|günler))",
+        r"^(?:nasılsın|nasilsin|naber|ne\s*haber|iyi\s*misin)",
+        r"^(?:teşekkür|tesekkur|sağ\s*ol|sag\s*ol|eyvallah)",
+        r"^(?:tamam|ok|evet|hayır|hayir|olur|olmaz|anladım|anladim)",
+        r"(?:müzi[kğ]|şarkı|sarki|video|youtube)",
+        r"(?:kendini?\s*güncelle|guncelle)",
+        r"(?:alarm|hatırlat|hatırlat|not\s*al|zamanlayıcı|timer)",
+        r"^(?:adım|adim|benim\s*ad)",
+        r"(?:ekran\s*görüntüsü|screenshot|wifi|bluetooth)",
+        r"(?:bilgisayar[ıi]?\s*kapat|sistemi?\s*kapat)",
+        r"^(?:kaç|kac|saat\s*kaç|tarih\s*ne|bugün\s*ne)",
+    ]
+    for kalip in komut_kelimeleri:
+        if re.search(kalip, metin_lower):
+            return False, None
+
     # 1. Acik arastirma niyeti
     arastirma_kaliplari = [
-        r"(?:arastır|araştır|arastir)",
+        r"(?:araştır|arastır|arastir)",
         r"(?:internette?|google'?da?|webde)\s+(?:ara|bak|bul)",
-        r"(?:haber|haberler)\s+(?:ne|neler|var)",
-        r"son\s+(?:haber|gelism|durum)",
-        r"(?:guncel|gundem|gunluk)\s+(?:haber|durum|gelism)",
+        r"(?:haber|haberler)\s+(?:ne|neler|var|nedir)",
+        r"son\s+(?:haber|gelişm|gelism|durum|deprem|zelzele|olay)",
+        r"(?:güncel|guncel|gündem|gundem|günlük|gunluk)\s+",
     ]
     for kalip in arastirma_kaliplari:
         if re.search(kalip, metin_lower):
-            # Arama sorgusunu cikar
-            sorgu = re.sub(r"(?:atlas|arastır|araştır|arastir|internette|google'?da|webde|ara|bak|bul)\s*", "", metin_lower).strip()
+            sorgu = re.sub(r"(?:atlas|araştır|arastır|arastir|internette?|google'?da?|webde)\s*", "", metin_lower).strip()
+            sorgu = re.sub(r"\s*(ara|bak|bul)\s*$", "", sorgu).strip()
             return True, sorgu or metin_lower
 
-    # 2. Bilgi sorulari — ansiklopedik
+    # 2. Bilgi sorulari — ansiklopedik (genis kaliplar)
     bilgi_kaliplari = [
-        r"(.+?)\s+(?:kimdir|kim(?:miş|mis)?|kimin)",
-        r"(.+?)\s+(?:nedir|ne(?:ymiş|ymis)?|ne\s+demek)",
-        r"(.+?)\s+(?:nerede(?:dir)?|nere(?:de|si))",
+        r"(.+?)\s+(?:kimdir|kim(?:miş|mis|dir)?)",
+        r"(.+?)\s+(?:nedir|ne(?:ymiş|ymis|dir)?|ne\s+demek)",
+        r"(.+?)\s+(?:nerede(?:dir)?|nere(?:de|si|li|ye))",
         r"(.+?)\s+ne\s+zaman",
-        r"(.+?)\s+(?:kac|kaç)\s+(?:yilinda|yılında|yasinda|yaşında)",
-        r"(.+?)\s+hakkında\s+bilgi",
-        r"(.+?)\s+(?:tarihçe|tarihce|gecmis|geçmiş)",
+        r"(.+?)\s+(?:kaç|kac)(?:\s|$)",
+        r"(.+?)\s+(?:ne\s*kadar)",
+        r"(.+?)\s+(?:nasıl|nasil)\s+(?:çalışır|calisir|yapılır|yapilir|olur|oluşur|olusur)",
+        r"(.+?)\s+hakkında",
+        r"(.+?)\s+(?:tarihçe|tarihce|tarihi|geçmiş|gecmis)",
+        r"(.+?)\s+(?:nüfusu?|nufusu?|başkenti?|baskenti?|para\s*birimi)",
+        r"(.+?)\s+(?:anlamı|anlami|manası|manasi)\s+(?:ne|nedir)",
+        r"(.+?)\s+(?:kurucusu?|mucidi?|kâşifi?|kasifi?)\s+(?:kim|ne)",
     ]
     for kalip in bilgi_kaliplari:
         m = re.search(kalip, metin_lower)
         if m:
             return True, metin_lower
 
-    # 3. Guncel fiyat / veri sorulari
+    # 3. Guncel veri sorulari (fiyat, deprem, mac, secim, hava...)
     guncel_kaliplari = [
-        r"(?:bitcoin|btc|ethereum|eth|kripto)\s*(?:fiyat|kac|kaç|ne\s*kadar)",
-        r"(?:altin|altın|gram\s*altin)\s*(?:fiyat|kac|kaç|ne\s*kadar)",
-        r"(?:hisse|borsa|bist|endeks)\s*(?:ne|kac|kaç)",
-        r"(?:deprem|zelzele)\s*(?:oldu|var|mi|nerede)",
-        r"(?:secim|seçim|oy)\s*(?:sonuc|sonuç)",
-        r"(?:mac|maç)\s*(?:skor|sonuc|sonuç|kac|kaç)",
+        r"(?:bitcoin|btc|ethereum|eth|kripto)",
+        r"(?:altın|altin|gram\s*altın|gram\s*altin)",
+        r"(?:hisse|borsa|bist|endeks)",
+        r"(?:deprem|zelzele|son\s*deprem)",
+        r"(?:seçim|secim|oy)\s*(?:sonuç|sonuc|ne|nasıl|nasil)",
+        r"(?:maç|mac)\s*(?:skor|sonuç|sonuc|kaç|kac|ne)",
+        r"(?:hava\s*durumu|hava\s*nasıl|hava\s*nasil)",
+        r"(?:dolar|euro|sterlin|pound)\s*(?:kaç|kac|ne\s*kadar|fiyat)",
+        r"(?:fiyat|ücret|ucret|maliyet)",
     ]
     for kalip in guncel_kaliplari:
         if re.search(kalip, metin_lower):
             return True, metin_lower
 
-    # 4. Gerekli degil — sohbet, komut, basit sorular
+    # 4. "son X" kalıbı — genellikle güncel bilgi ister
+    if re.search(r"^son\s+\w+", metin_lower):
+        return True, metin_lower
+
+    # 5. Soru kalıbı tespiti — genel bilgi soruları
+    # "X nedir", "X kim", "X nerede", "X ne zaman", "X kaç", "X nasıl"
+    soru_kelimeleri = ["nedir", "kimdir", "nerede", "nereye", "nasıl", "nasil",
+                       "neden", "niçin", "nicin", "kaç", "kac", "ne kadar",
+                       "hangi", "ne zaman"]
+    for kelime in soru_kelimeleri:
+        if kelime in metin_lower and len(metin_lower) > 8:
+            return True, metin_lower
+
+    # 6. Gerekli degil
     return False, None
 
 
