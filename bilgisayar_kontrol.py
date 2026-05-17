@@ -537,6 +537,78 @@ def hava_durumu(sehir="Denizli"):
         return False, str(e)
 
 
+# ============================================================
+# MÜZİK / MEDYA KONTROL
+# ============================================================
+
+def muzik_cal(sorgu):
+    """
+    YouTube'da müzik ara ve ilk videoyu otomatik başlat.
+    1. YouTube arama URL'si açılır
+    2. Sayfa yüklendikten sonra ilk videoya tıklanır
+    """
+    import urllib.parse
+
+    try:
+        import pyautogui
+    except ImportError:
+        # pyautogui yoksa sadece arama sayfasını aç
+        url = f"https://www.youtube.com/results?search_query={urllib.parse.quote(sorgu)}"
+        os.startfile(url)
+        return True, f"YouTube'da '{sorgu}' araması yapıldı"
+
+    try:
+        url = f"https://www.youtube.com/results?search_query={urllib.parse.quote(sorgu)}"
+        os.startfile(url)
+        logger.info(f"YouTube müzik arama: {sorgu}")
+
+        # Sayfa yüklensin
+        time.sleep(5)
+
+        # İlk videoya tıkla — YouTube'da ilk sonuç
+        # ekranın yaklaşık %30 solunda, %42 üstünde (tüm çözünürlüklerde çalışır)
+        ekran_w, ekran_h = pyautogui.size()
+        x = int(ekran_w * 0.30)
+        y = int(ekran_h * 0.42)
+        pyautogui.click(x, y)
+
+        logger.info(f"İlk video tıklandı: ({x}, {y})")
+        return True, f"YouTube'da '{sorgu}' çalınıyor"
+    except Exception as e:
+        logger.error(f"Müzik çalma hatası: {e}")
+        return False, str(e)
+
+
+def medya_oynat_duraklat():
+    """Medya oynat/duraklat — YouTube, Spotify, VLC vb."""
+    try:
+        import pyautogui
+        pyautogui.press("playpause")
+        return True, "Oynat/Duraklat"
+    except Exception as e:
+        return False, str(e)
+
+
+def medya_sonraki():
+    """Sonraki parça / video"""
+    try:
+        import pyautogui
+        pyautogui.press("nexttrack")
+        return True, "Sonraki parça"
+    except Exception as e:
+        return False, str(e)
+
+
+def medya_onceki():
+    """Önceki parça / video"""
+    try:
+        import pyautogui
+        pyautogui.press("prevtrack")
+        return True, "Önceki parça"
+    except Exception as e:
+        return False, str(e)
+
+
 def doviz_kuru(birim="USD"):
     """
     Güncel döviz kuru sorgula (TRY bazlı).
