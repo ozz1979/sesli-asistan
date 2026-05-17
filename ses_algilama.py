@@ -120,11 +120,14 @@ class SesAlgilama:
         timeout = timeout or self._dinleme_suresi
         esik = self._enerji_esigi
 
+        logger.info(f"Dinleme basliyor (esik: {esik:.0f}, timeout: {timeout}s)")
+
         baslangic = time.time()
         buffer = []
         konusma_basladi = False
         sessizlik_baslangic = None
         sessizlik_limit = self._sessizlik_suresi
+        log_sayac = 0
 
         try:
             stream = sd.InputStream(
@@ -134,6 +137,7 @@ class SesAlgilama:
                 blocksize=CHUNK_SIZE
             )
             stream.start()
+            logger.debug("Stream acildi")
 
             while True:
                 gecen = time.time() - baslangic
@@ -142,6 +146,7 @@ class SesAlgilama:
                     if konusma_basladi and len(buffer) > 0:
                         break
                     # Timeout — küreyi sıfırla
+                    logger.info(f"Dinleme timeout ({timeout}s) - ses algilanamadi (esik: {esik:.0f})")
                     self._ses_seviye_gonder(0.0)
                     stream.stop()
                     stream.close()
@@ -152,6 +157,11 @@ class SesAlgilama:
                     logger.debug("Buffer overflow — chunk atlandı")
 
                 rms = np.sqrt(np.mean(chunk.astype(np.float64) ** 2))
+
+                # Her 2 saniyede bir durum logla
+                log_sayac += 1
+                if log_sayac % 20 == 1:
+                    logger.info(f"Dinleme... RMS: {rms:.0f}, Esik: {esik:.0f}, Gecen: {gecen:.1f}s")
 
                 # ── Ses seviyesini GUI küresine gönder ──
                 normalized = min(1.0, rms / max(esik * 3, 1))
