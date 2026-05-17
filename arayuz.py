@@ -259,6 +259,7 @@ class GuiSinyalleri(QObject):
     duygu_guncelle = pyqtSignal(str)
     ses_seviyesi = pyqtSignal(float)
     navigasyon = pyqtSignal(str)     # sidebar menü tıklama: "gecmis", "ayarlar"
+    pencere_goster = pyqtSignal()    # arka plan modunda pencereyi göster
 
 
 # ═══════════════════════════════════════════════════════
@@ -761,6 +762,13 @@ class AtlasArayuz(QMainWindow):
         self.sinyaller.surum_goster.connect(self._surum_goster)
         self.sinyaller.duygu_guncelle.connect(self._duygu_guncelle)
         self.sinyaller.ses_seviyesi.connect(self._ses_seviyesi_slot)
+        self.sinyaller.pencere_goster.connect(self._pencere_goster_slot)
+
+    def _pencere_goster_slot(self):
+        """Arka plan modundan pencereyi göster"""
+        self.showMaximized()
+        self.activateWindow()
+        self.raise_()
 
     def _mesaj_ekle(self, rol, mesaj):
         zaman = datetime.now().strftime("%H:%M")
