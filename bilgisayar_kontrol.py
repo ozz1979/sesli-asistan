@@ -711,3 +711,348 @@ def doviz_kuru(birim="USD"):
             continue
 
     return False, "Döviz kuru alınamadı"
+
+
+# ═══════════════════════════════════════════════════════
+# DOSYA İŞLEMLERİ — Tam Bilgisayar Erişimi
+# ═══════════════════════════════════════════════════════
+
+def dosya_oku(yol):
+    """Dosya içeriğini oku. Max 100KB."""
+    try:
+        yol = os.path.expanduser(yol)
+        if not os.path.exists(yol):
+            return False, f"Dosya bulunamadı: {yol}"
+        boyut = os.path.getsize(yol)
+        if boyut > 100 * 1024:
+            return False, f"Dosya çok büyük ({boyut // 1024}KB). Max 100KB okunabilir."
+        with open(yol, "r", encoding="utf-8", errors="replace") as f:
+            icerik = f.read()
+        return True, icerik
+    except Exception as e:
+        logger.error(f"Dosya okuma hatası: {e}")
+        return False, str(e)
+
+
+def dosya_yaz(yol, icerik):
+    """Dosyaya yaz (üzerine yaz). Varsa otomatik yedek alır."""
+    try:
+        yol = os.path.expanduser(yol)
+        if os.path.exists(yol):
+            import shutil
+            shutil.copy2(yol, yol + ".yedek")
+        klasor = os.path.dirname(yol)
+        if klasor and not os.path.exists(klasor):
+            os.makedirs(klasor, exist_ok=True)
+        with open(yol, "w", encoding="utf-8") as f:
+            f.write(icerik)
+        logger.info(f"Dosya yazıldı: {yol}")
+        return True, f"Dosya yazıldı: {os.path.basename(yol)}"
+    except Exception as e:
+        logger.error(f"Dosya yazma hatası: {e}")
+        return False, str(e)
+
+
+def dosya_ekle(yol, icerik):
+    """Dosya sonuna içerik ekle."""
+    try:
+        yol = os.path.expanduser(yol)
+        with open(yol, "a", encoding="utf-8") as f:
+            f.write(icerik)
+        return True, f"Eklendi: {os.path.basename(yol)}"
+    except Exception as e:
+        return False, str(e)
+
+
+def dosya_sil(yol):
+    """Dosyayı çöp kutusuna gönder."""
+    try:
+        yol = os.path.expanduser(yol)
+        if not os.path.exists(yol):
+            return False, "Dosya bulunamadı"
+        try:
+            from send2trash import send2trash
+            send2trash(yol)
+            return True, f"Çöp kutusuna gönderildi: {os.path.basename(yol)}"
+        except ImportError:
+            os.remove(yol)
+            return True, f"Silindi: {os.path.basename(yol)}"
+    except Exception as e:
+        return False, str(e)
+
+
+def klasor_olustur(yol):
+    """Yeni klasör oluştur."""
+    try:
+        yol = os.path.expanduser(yol)
+        os.makedirs(yol, exist_ok=True)
+        return True, f"Klasör oluşturuldu: {yol}"
+    except Exception as e:
+        return False, str(e)
+
+
+def dosya_listele(yol=None):
+    """Klasördeki dosya ve klasörleri listele."""
+    try:
+        yol = os.path.expanduser(yol or "~\\Desktop")
+        if not os.path.isdir(yol):
+            return False, f"Klasör bulunamadı: {yol}"
+        icerik = os.listdir(yol)
+        klasorler = []
+        dosyalar = []
+        for item in sorted(icerik):
+            tam_yol = os.path.join(yol, item)
+            if os.path.isdir(tam_yol):
+                klasorler.append(f"klasor: {item}")
+            else:
+                boyut = os.path.getsize(tam_yol)
+                if boyut > 1024 * 1024:
+                    boyut_str = f"{boyut / (1024*1024):.1f}MB"
+                elif boyut > 1024:
+                    boyut_str = f"{boyut / 1024:.0f}KB"
+                else:
+                    boyut_str = f"{boyut}B"
+                dosyalar.append(f"dosya: {item} ({boyut_str})")
+        sonuc = ", ".join(klasorler + dosyalar)
+        toplam = len(klasorler) + len(dosyalar)
+        return True, f"{toplam} oge: {sonuc}" if sonuc else "Klasor bos"
+    except Exception as e:
+        return False, str(e)
+
+
+def dosya_tasi(kaynak, hedef):
+    """Dosya veya klasörü taşı."""
+    try:
+        import shutil
+        kaynak = os.path.expanduser(kaynak)
+        hedef = os.path.expanduser(hedef)
+        shutil.move(kaynak, hedef)
+        return True, f"Taşındı: {os.path.basename(kaynak)}"
+    except Exception as e:
+        return False, str(e)
+
+
+def dosya_kopyala(kaynak, hedef):
+    """Dosya veya klasörü kopyala."""
+    try:
+        import shutil
+        kaynak = os.path.expanduser(kaynak)
+        hedef = os.path.expanduser(hedef)
+        if os.path.isdir(kaynak):
+            shutil.copytree(kaynak, hedef)
+        else:
+            shutil.copy2(kaynak, hedef)
+        return True, f"Kopyalandı: {os.path.basename(kaynak)}"
+    except Exception as e:
+        return False, str(e)
+
+
+def dosya_yeniden_adlandir(eski_yol, yeni_isim):
+    """Dosya veya klasörü yeniden adlandır."""
+    try:
+        eski_yol = os.path.expanduser(eski_yol)
+        klasor = os.path.dirname(eski_yol)
+        yeni_yol = os.path.join(klasor, yeni_isim)
+        os.rename(eski_yol, yeni_yol)
+        return True, f"Yeniden adlandırıldı: {yeni_isim}"
+    except Exception as e:
+        return False, str(e)
+
+
+# ═══════════════════════════════════════════════════════
+# SİSTEM İŞLEMLERİ
+# ═══════════════════════════════════════════════════════
+
+def wifi_kontrol(durum):
+    """Wi-Fi aç/kapat. durum: 'ac' veya 'kapat'"""
+    try:
+        if durum == "ac":
+            subprocess.run(["netsh", "interface", "set", "interface", "Wi-Fi", "enabled"],
+                          capture_output=True, timeout=10)
+            return True, "Wi-Fi açıldı"
+        else:
+            subprocess.run(["netsh", "interface", "set", "interface", "Wi-Fi", "disabled"],
+                          capture_output=True, timeout=10)
+            return True, "Wi-Fi kapatıldı"
+    except Exception as e:
+        return False, str(e)
+
+
+def bluetooth_kontrol(durum):
+    """Bluetooth ayarlarını aç."""
+    try:
+        subprocess.Popen("start ms-settings:bluetooth", shell=True)
+        return True, "Bluetooth ayarları açıldı"
+    except Exception as e:
+        return False, str(e)
+
+
+def parlaklik_ayarla(yuzde):
+    """Ekran parlaklığını ayarla (0-100)."""
+    try:
+        yuzde = max(0, min(100, int(yuzde)))
+        subprocess.run([
+            "powershell", "-Command",
+            f"(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightnessMethods).WmiSetBrightness(1,{yuzde})"
+        ], capture_output=True, timeout=10)
+        logger.info(f"Parlaklık ayarlandı: %{yuzde}")
+        return True, f"Parlaklık %{yuzde} yapıldı"
+    except Exception as e:
+        return False, str(e)
+
+
+def ekran_kilitle():
+    """Ekranı kilitle (Win+L)."""
+    try:
+        import ctypes
+        ctypes.windll.user32.LockWorkStation()
+        return True, "Ekran kilitlendi"
+    except Exception as e:
+        return False, str(e)
+
+
+def cop_bosalt():
+    """Çöp kutusunu boşalt."""
+    try:
+        import ctypes
+        ctypes.windll.shell32.SHEmptyRecycleBinW(None, None, 0x07)
+        return True, "Çöp kutusu boşaltıldı"
+    except Exception as e:
+        return False, str(e)
+
+
+def pil_durumu():
+    """Pil durumunu sorgula."""
+    try:
+        result = subprocess.run(
+            ["powershell", "-Command",
+             "(Get-WmiObject Win32_Battery).EstimatedChargeRemaining"],
+            capture_output=True, text=True, timeout=10
+        )
+        yuzde = result.stdout.strip()
+        if yuzde:
+            result2 = subprocess.run(
+                ["powershell", "-Command",
+                 "(Get-WmiObject Win32_Battery).BatteryStatus"],
+                capture_output=True, text=True, timeout=10
+            )
+            sarj_kodu = result2.stdout.strip()
+            sarj = "sarj oluyor" if sarj_kodu == "2" else "pilde"
+            return True, {"yuzde": int(yuzde), "durum": sarj}
+        return False, "Pil bilgisi alınamadı"
+    except Exception as e:
+        return False, str(e)
+
+
+def not_al(baslik, icerik=""):
+    """Masaüstüne not dosyası oluştur ve aç."""
+    try:
+        masaustu = os.path.expanduser("~\\Desktop")
+        guvenli = "".join(c if c.isalnum() or c in " _-" else "_" for c in baslik)[:50].strip()
+        if not guvenli:
+            guvenli = "not"
+        dosya_yolu = os.path.join(masaustu, f"{guvenli}.txt")
+        sayac = 1
+        while os.path.exists(dosya_yolu):
+            dosya_yolu = os.path.join(masaustu, f"{guvenli}_{sayac}.txt")
+            sayac += 1
+        tarih = time.strftime("%d.%m.%Y %H:%M")
+        tam_icerik = f"Not - {tarih}\n{'=' * 40}\n\n{icerik or baslik}\n"
+        with open(dosya_yolu, "w", encoding="utf-8") as f:
+            f.write(tam_icerik)
+        os.startfile(dosya_yolu)
+        logger.info(f"Not oluşturuldu: {dosya_yolu}")
+        return True, dosya_yolu
+    except Exception as e:
+        return False, str(e)
+
+
+def alarm_kur(saniye, mesaj="Sure doldu!"):
+    """Zamanlayıcı kur — belirtilen süre sonra bildirim göster."""
+    try:
+        import threading
+        def _alarm():
+            time.sleep(saniye)
+            try:
+                import ctypes
+                ctypes.windll.user32.MessageBoxW(0, mesaj, "ATLAS Hatirlatici", 0x40)
+            except Exception:
+                pass
+        threading.Thread(target=_alarm, daemon=True).start()
+        if saniye >= 3600:
+            return True, f"{saniye // 3600} saat {(saniye % 3600) // 60} dakika sonra hatirlatacagim"
+        elif saniye >= 60:
+            return True, f"{saniye // 60} dakika sonra hatirlatacagim"
+        return True, f"{saniye} saniye sonra hatirlatacagim"
+    except Exception as e:
+        return False, str(e)
+
+
+def masaustu_goster():
+    """Tüm pencereleri küçültüp masaüstünü göster (Win+D)."""
+    try:
+        import pyautogui
+        pyautogui.hotkey("win", "d")
+        return True, "Masaustu gosterildi"
+    except Exception as e:
+        return False, str(e)
+
+
+def pencere_degistir():
+    """Sonraki pencereye geç (Alt+Tab)."""
+    try:
+        import pyautogui
+        pyautogui.hotkey("alt", "tab")
+        return True, "Pencere degistirildi"
+    except Exception as e:
+        return False, str(e)
+
+
+def calistir_penceresi():
+    """Çalıştır penceresini aç (Win+R)."""
+    try:
+        import pyautogui
+        pyautogui.hotkey("win", "r")
+        return True, "Calistir penceresi acildi"
+    except Exception as e:
+        return False, str(e)
+
+
+def bildirim_merkezi():
+    """Windows bildirim merkezini aç (Win+N)."""
+    try:
+        import pyautogui
+        pyautogui.hotkey("win", "n")
+        return True, "Bildirim merkezi acildi"
+    except Exception as e:
+        return False, str(e)
+
+
+def arama_ac():
+    """Windows arama çubuğunu aç (Win+S)."""
+    try:
+        import pyautogui
+        pyautogui.hotkey("win", "s")
+        return True, "Arama acildi"
+    except Exception as e:
+        return False, str(e)
+
+
+def yakalama_araci():
+    """Ekran yakalama aracını aç (Win+Shift+S)."""
+    try:
+        import pyautogui
+        pyautogui.hotkey("win", "shift", "s")
+        return True, "Yakalama araci acildi"
+    except Exception as e:
+        return False, str(e)
+
+
+def emoji_paneli():
+    """Windows emoji panelini aç (Win+.)."""
+    try:
+        import pyautogui
+        pyautogui.hotkey("win", ".")
+        return True, "Emoji paneli acildi"
+    except Exception as e:
+        return False, str(e)
