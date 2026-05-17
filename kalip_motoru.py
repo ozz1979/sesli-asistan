@@ -654,6 +654,34 @@ class KalipMotoru:
             else:
                 return f"Hava durumunu şu an öğrenemedim {ad}, interneti kontrol eder misin?", "hata", 0.85
 
+        # ── 4b. Döviz kuru ──
+        doviz_kaliplari = [
+            (r"(?:dolar|usd)\s*(?:kuru?|kaç|kac|ne\s*kadar|fiyat)", "USD", "Dolar"),
+            (r"(?:euro?|eur)\s*(?:kuru?|kaç|kac|ne\s*kadar|fiyat)", "EUR", "Euro"),
+            (r"(?:sterlin|pound|gbp)\s*(?:kuru?|kaç|kac|ne\s*kadar|fiyat)", "GBP", "Sterlin"),
+            (r"(?:kaç|kac|ne\s*kadar)\s*(?:tl|lira).*(?:dolar|usd)", "USD", "Dolar"),
+            (r"(?:kaç|kac|ne\s*kadar)\s*(?:tl|lira).*(?:euro?|eur)", "EUR", "Euro"),
+            (r"(?:kaç|kac|ne\s*kadar)\s*(?:tl|lira).*(?:sterlin|gbp)", "GBP", "Sterlin"),
+            (r"(?:dolar|usd)\s*(?:kaç|kac)\s*(?:tl|lira)", "USD", "Dolar"),
+            (r"(?:euro?|eur)\s*(?:kaç|kac)\s*(?:tl|lira)", "EUR", "Euro"),
+            (r"1\s*(?:dolar|usd)", "USD", "Dolar"),
+            (r"1\s*(?:euro?|eur)", "EUR", "Euro"),
+            (r"(?:döviz|doviz)\s*(?:kuru?|fiyat)", "USD", "Dolar"),
+        ]
+
+        metin_lower_doviz = turkce_normalize(metin.lower())
+        for kalip, birim, birim_adi in doviz_kaliplari:
+            if re.search(kalip, metin_lower_doviz):
+                basarili, veri = bk.doviz_kuru(birim)
+                if basarili:
+                    return (
+                        f"Güncel {birim_adi} kuru: 1 {birim} = {veri['kur']} TL {ad}.",
+                        "doviz_kuru", 0.95
+                    )
+                else:
+                    return f"Döviz kurunu şu an öğrenemedim {ad}, interneti kontrol eder misin?", "hata", 0.85
+                break
+
         # ── 5. Web arama ──
         m = re.search(r"(?:internette?|google.?da|web.?de|araştır)\s+(.+?)(?:\s+ara)?$", metin)
         if not m:
