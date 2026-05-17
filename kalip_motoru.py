@@ -695,25 +695,31 @@ class KalipMotoru:
                 break
 
         # ── 4c. Müzik / Medya kontrol ──
-        # "müzik aç", "şarkı çal", "YouTube'da X çal" vb.
+        # "müzik aç", "şarkı çal", "YouTube'da X çal/bulup aç" vb.
         muzik_tetik = False
-        # "X müzik aç/çal" veya "müzik aç/çal X"
-        if re.search(r"(?:müzik|muzik|şarkı|sarki)\s*(?:aç|ac|çal|cal|başlat|baslat|oynat)", metin):
+        # "X müzik aç/çal" veya "müzik aç/çal X" (arada "bulup", "biraz" gibi ekler olabilir)
+        if re.search(r"(?:müzik|muzik|şarkı|sarki).{0,15}(?:aç|ac|çal|cal|başlat|baslat|oynat)", metin):
             muzik_tetik = True
-        elif re.search(r"(?:aç|ac|çal|cal|oynat)\s*(?:müzik|muzik|şarkı|sarki)", metin):
+        elif re.search(r"(?:aç|ac|çal|cal|oynat).{0,8}(?:müzik|muzik|şarkı|sarki)", metin):
             muzik_tetik = True
-        elif re.search(r"(?:youtube|yutup|yutube).{0,8}(?:aç|ac|çal|cal|oynat)\s+.+", metin):
+        elif re.search(r"(?:youtube|yutup|yutube).{0,12}(?:aç|ac|çal|cal|oynat|bul)", metin):
             muzik_tetik = True
-        elif re.search(r".+\s+(?:youtube|yutup|yutube).{0,5}(?:aç|ac|çal|cal|oynat)", metin):
+        elif re.search(r".+\s+(?:youtube|yutup|yutube).{0,8}(?:aç|ac|çal|cal|oynat|bul)", metin):
+            muzik_tetik = True
+        # "X dinlemek istiyorum", "X dinle", "X çalsana"
+        elif re.search(r"(?:müzik|muzik|şarkı|sarki).{0,10}(?:dinle|dinlemek|çalsana|calsana|bul)", metin):
             muzik_tetik = True
 
         if muzik_tetik:
             # Arama sorgusunu çıkar (komut kelimelerini temizle)
             sorgu = metin
             temizle = ["müzik", "muzik", "şarkı", "sarki", "aç", "açar mısın",
-                        "açarmısın", "açabilir misin", "ac", "çal", "cal",
+                        "açarmısın", "açabilir misin", "açar misin", "ac",
+                        "çal", "cal", "çalsana", "calsana",
                         "başlat", "baslat", "oynat", "youtube", "yutup", "yutube",
-                        "bana", "benim için", "biraz", "güzel", "lütfen"]
+                        "bana", "benim için", "biraz", "güzel", "lütfen",
+                        "bulup", "bul", "dinle", "dinlemek", "istiyorum",
+                        "mısın", "misin", "msın"]
             for sil in temizle:
                 sorgu = re.sub(r'\b' + re.escape(sil) + r'\b', '', sorgu, flags=re.IGNORECASE)
             sorgu = re.sub(r'\s+', ' ', sorgu).strip()
