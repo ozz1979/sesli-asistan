@@ -787,13 +787,24 @@ class KalipMotoru:
             else:
                 return f"Müzik açılamadı: {mesaj}", "hata", 0.9
 
-        # ── 5. Web arama ──
-        m = re.search(r"(?:internette?|google.?da|web.?de|araştır)\s+(.+?)(?:\s+ara)?$", metin)
+        # ── 5. Web arama (akıllı — önce web_arama modülü, yoksa tarayıcı) ──
+        m = re.search(r"(?:internette?|google.?da|web.?de|araştır|arastır|arastir)\s+(.+?)(?:\s+ara)?$", metin)
         if not m:
-            m = re.search(r"(.+?)\s+(?:ara|arat|araştır)$", metin)
+            m = re.search(r"(.+?)\s+(?:ara(?:t|ştır|stır|stir))\s*$", metin)
         if m:
             sorgu = m.group(1).strip()
             if len(sorgu) > 2:
+                # Önce web_arama modülüyle gerçek arama yap
+                if _WEB_ARAMA_VAR:
+                    try:
+                        sonuc = web_arama.arastir(sorgu)
+                        if sonuc["basarili"] and sonuc["sonuclar"]:
+                            ilk = sonuc["sonuclar"][0]
+                            ozet = ilk.get("ozet", "")[:250]
+                            return f"İşte bulduklarım {ad}: {ozet}", "web_arama", 0.95
+                    except Exception as e:
+                        logger.debug(f"Web arama Sistem 1 hatası: {e}")
+                # Fallback: tarayıcıda aç
                 basarili, mesaj = bk.web_ara(sorgu)
                 if basarili:
                     return f"'{sorgu}' için arama yapıyorum {ad}.", "web_arama", 0.95
