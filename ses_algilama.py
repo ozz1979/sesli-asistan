@@ -56,54 +56,61 @@ class SesAlgilama:
         # Ses seviye callback — GUI küresine bağlanır
         self.ses_seviye_callback = None
 
-    def baslat(self):
-        """Mikrofonu başlat ve kalibre et"""
-        try:
-            import sounddevice as sd
-            import speech_recognition as sr
+    def baslat(self, max_deneme=3):
+        """Mikrofonu başlat ve kalibre et (başarısızsa tekrar dene)"""
+        import speech_recognition as sr
+        self._recognizer = sr.Recognizer()
 
-            self._recognizer = sr.Recognizer()
+        for deneme in range(1, max_deneme + 1):
+            try:
+                import sounddevice as sd
 
-            cihaz = sd.query_devices(kind="input")
-            logger.info(f"Mikrofon: {cihaz['name']} (SR: {cihaz['default_samplerate']})")
+                cihaz = sd.query_devices(kind="input")
+                logger.info(f"Mikrofon: {cihaz['name']} (SR: {cihaz['default_samplerate']})")
 
-            # Kısa test kaydı
-            logger.info("Mikrofon test ediliyor...")
-            test = sd.rec(int(SAMPLE_RATE * 0.3), samplerate=SAMPLE_RATE,
-                         channels=CHANNELS, dtype=DTYPE)
-            sd.wait()
-            if test is None or len(test) == 0:
-                raise RuntimeError("Mikrofon ses kaydı yapamadı")
+                # Kısa test kaydı
+                logger.info(f"Mikrofon test ediliyor... (deneme {deneme}/{max_deneme})")
+                test = sd.rec(int(SAMPLE_RATE * 0.3), samplerate=SAMPLE_RATE,
+                             channels=CHANNELS, dtype=DTYPE)
+                sd.wait()
+                if test is None or len(test) == 0:
+                    raise RuntimeError("Mikrofon ses kaydı yapamadı")
 
-            # Kalibrasyon
-            logger.info(f"Mikrofon kalibre ediliyor ({self._kalibrasyon_suresi}s)...")
-            kalibrasyon = sd.rec(
-                int(SAMPLE_RATE * self._kalibrasyon_suresi),
-                samplerate=SAMPLE_RATE,
-                channels=CHANNELS,
-                dtype=DTYPE
-            )
-            sd.wait()
+                # Kalibrasyon
+                logger.info(f"Mikrofon kalibre ediliyor ({self._kalibrasyon_suresi}s)...")
+                kalibrasyon = sd.rec(
+                    int(SAMPLE_RATE * self._kalibrasyon_suresi),
+                    samplerate=SAMPLE_RATE,
+                    channels=CHANNELS,
+                    dtype=DTYPE
+                )
+                sd.wait()
 
-            rms = np.sqrt(np.mean(kalibrasyon.astype(np.float64) ** 2))
-            if self._dinamik_esik:
-                self._enerji_esigi = max(rms * 1.15, 50)
-            self._kalibrasyon_esigi = self._enerji_esigi  # Kalibrasyon bazlını sakla
-            logger.info(f"Kalibrasyon tamamlandı. Ortam RMS: {rms:.0f}, Eşik: {self._enerji_esigi:.0f}")
+                rms = np.sqrt(np.mean(kalibrasyon.astype(np.float64) ** 2))
+                if self._dinamik_esik:
+                    # Eşik: min 30, max 200 — aşırı yükselmesini engelle
+                    self._enerji_esigi = min(max(rms * 1.15, 30), 200)
+                self._kalibrasyon_esigi = self._enerji_esigi
+                logger.info(f"Kalibrasyon tamamlandı. Ortam RMS: {rms:.0f}, Eşik: {self._enerji_esigi:.0f}")
 
-            self._aktif = True
-            self.hazir.set()
-            self.hata = None
-            return True
+                self._aktif = True
+                self.hazir.set()
+                self.hata = None
+                return True
 
-        except ImportError as e:
-            self.hata = f"Eksik paket: {e}"
-            logger.error(f"Import hatası: {e}")
-            return False
-        except Exception as e:
-            self.hata = str(e)
-            logger.error(f"Mikrofon başlatma hatası: {e}")
-            return False
+            except ImportError as e:
+                self.hata = f"Eksik paket: {e}"
+                logger.error(f"Import hatası: {e}")
+                return False
+            except Exception as e:
+                self.hata = str(e)
+                logger.warning(f"Mikrofon denemesi {deneme}/{max_deneme} başarısız: {e}")
+                if deneme < max_deneme:
+                    logger.info(f"3 saniye sonra tekrar denenecek...")
+                    time.sleep(3)
+
+        logger.error(f"Mikrofon {max_deneme} denemede başlatılamadı: {self.hata}")
+        return False
 
     def dinle(self, timeout=None):
         """
