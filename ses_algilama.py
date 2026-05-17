@@ -132,6 +132,17 @@ class SesAlgilama:
         self._enerji_esigi = self._kalibrasyon_esigi
         esik = self._enerji_esigi
 
+        # Müzik modu: eşiği yükselt — müzik gürültüsünü filtrele, sadece insan sesini yakala
+        # Siri/Alexa bunu AEC (echo cancellation) ile yapar; ATLAS'ta hoparlör çıkışına
+        # erişim yok, bu yüzden eşik yükseltme + ses kısma kombinasyonu kullanıyoruz
+        try:
+            import bilgisayar_kontrol as bk
+            if bk.muzik_durumu():
+                esik = max(esik * 4, 200)  # Müzik modunda 4x eşik (min 200)
+                logger.debug(f"Müzik modu aktif — eşik yükseltildi: {esik:.0f}")
+        except Exception:
+            pass
+
         logger.info(f"Dinleme basliyor (esik: {esik:.0f}, timeout: {timeout}s)")
 
         baslangic = time.time()
