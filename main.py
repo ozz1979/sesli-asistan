@@ -35,6 +35,50 @@ def logging_ayarla(seviye="INFO"):
 logger = logging.getLogger("ATLAS")
 
 # ============================================================
+# OTOMATIK GÜNCELLEME (her başlatmada — modüllerden ÖNCE)
+# ============================================================
+
+def _otomatik_guncelle():
+    """
+    ATLAS başlamadan önce GitHub'dan güncelleme kontrolü.
+    Yeni commit varsa dosyaları indirir ve yeniden başlatır.
+    """
+    # oto_guncelleme.py yoksa GitHub'dan indir
+    if not os.path.exists("oto_guncelleme.py"):
+        try:
+            import urllib.request
+            t = str(int(time.time()))
+            url = f"https://raw.githubusercontent.com/ozz1979/sesli-asistan/main/oto_guncelleme.py?v={t}"
+            req = urllib.request.Request(url, headers={"Cache-Control": "no-cache"})
+            resp = urllib.request.urlopen(req, timeout=15)
+            with open("oto_guncelleme.py", "wb") as f:
+                f.write(resp.read())
+            logger.info("oto_guncelleme.py indirildi")
+        except Exception as e:
+            logger.debug(f"oto_guncelleme.py indirilemedi: {e}")
+            return
+
+    try:
+        from oto_guncelleme import guncelleme_kontrol
+        guncellendi, mesaj = guncelleme_kontrol()
+        if guncellendi:
+            logger.info(f"Güncelleme uygulandı: {mesaj} — yeniden başlatılıyor...")
+            print(f"[ATLAS] Güncelleme: {mesaj}")
+            print("[ATLAS] Yeniden başlatılıyor...")
+            time.sleep(1)
+            python = sys.executable
+            os.execl(python, python, *sys.argv)
+    except Exception as e:
+        logger.debug(f"Otomatik güncelleme atlandı: {e}")
+
+
+# Güncellemeyi çalıştır (ATLAS modülleri yüklenmeden önce)
+try:
+    _otomatik_guncelle()
+except Exception:
+    pass
+
+# ============================================================
 # CONFIG YÜKLEME
 # ============================================================
 
