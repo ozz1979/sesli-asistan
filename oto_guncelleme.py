@@ -37,6 +37,7 @@ DOSYALAR = [
     "konusma_uretimi.py",
     "dil_anlama.py",
     "oto_guncelleme.py",
+    "web_arama.py",
     "atlas_baslat.vbs",
     "startup_kur.bat",
     "startup_kaldir.bat",
