@@ -1,18 +1,17 @@
 @echo off
 chcp 65001 >nul
 echo ═══════════════════════════════════════════
-echo   ATLAS - Otomatik Başlatma Kaldırma
+echo   ATLAS - Otomatik Baslatma Kaldirma
 echo ═══════════════════════════════════════════
 echo.
 
-set "SHORTCUT=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\ATLAS.lnk"
+set "STARTUP=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup"
 
-if exist "%SHORTCUT%" (
-    del "%SHORTCUT%"
-    echo Basarili! ATLAS otomatik baslatmadan kaldirildi.
-) else (
-    echo ATLAS zaten otomatik baslatmada degil.
-)
+if exist "%STARTUP%\atlas_baslat.vbs" del "%STARTUP%\atlas_baslat.vbs"
+if exist "%STARTUP%\atlas_startup.vbs" del "%STARTUP%\atlas_startup.vbs"
+if exist "%STARTUP%\SesliAsistan.vbs" del "%STARTUP%\SesliAsistan.vbs"
+if exist "%STARTUP%\ATLAS.lnk" del "%STARTUP%\ATLAS.lnk"
 
+echo Basarili! ATLAS otomatik baslatmadan kaldirildi.
 echo.
 pause
