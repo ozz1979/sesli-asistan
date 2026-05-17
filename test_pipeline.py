@@ -1,12 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-ATLAS Tam Pipeline Testi v2
-Tum zinciri test eder: web_arama -> karar_merkezi -> AI yanit
+ATLAS Tam Pipeline Testi v3
 """
 import sys, os, json, time
 
 print("=" * 60)
-print("  ATLAS TAM PIPELINE TESTi v2")
+print("  ATLAS TAM PIPELINE TESTi v3")
 print("=" * 60)
 
 # Config yukle
@@ -44,8 +43,6 @@ groq_model = ai_cfg.get("groq_model", "llama-3.3-70b-versatile")
 if groq_key:
     try:
         from openai import OpenAI
-        client = OpenAI(api_key=groq_key, base_url="https://api.openai.com/v1")
-        # Oops - Groq kullanir
         client = OpenAI(api_key=groq_key, base_url="https://api.groq.com/openai/v1")
         t0 = time.time()
         resp = client.chat.completions.create(
@@ -54,9 +51,7 @@ if groq_key:
                 {"role": "system", "content": "Sen ATLAS, Turkce sesli asistansin. Kisa ve oz yanitla."},
                 {"role": "user", "content": "Elon Musk kimdir? 2 cumle ile anlat."}
             ],
-            max_tokens=200,
-            temperature=0.7,
-            timeout=10
+            max_tokens=200, temperature=0.7, timeout=10
         )
         sure = (time.time() - t0) * 1000
         yanit = resp.choices[0].message.content if resp.choices else "BOS"
@@ -73,11 +68,11 @@ try:
     from karar_merkezi import KararMerkezi
     from kalip_motoru import KalipMotoru
     from hafiza_sistemi import HafizaSistemi
-    from duygu_motoru import DuyguMotoru
+    from duygu_analizi import DuyguAnalizi
 
     kalip = KalipMotoru(config)
     hafiza = HafizaSistemi(config)
-    duygu = DuyguMotoru(config)
+    duygu = DuyguAnalizi()
     km = KararMerkezi(kalip, hafiza, duygu, config)
     print("  Karar merkezi: OK")
     print(f"  Gemini client: {'VAR' if km._gemini_client else 'YOK'}")
@@ -92,7 +87,7 @@ except Exception as e:
     sys.exit(1)
 
 # Tam pipeline testi
-print("\n[5/5] Tam pipeline testi (her soru icin sonuc)...")
+print("\n[5/5] Tam pipeline testi...")
 test_sorular = [
     "Elon Musk kimdir",
     "yapay zeka nedir",
@@ -108,7 +103,7 @@ for i, soru in enumerate(test_sorular, 1):
         print(f"  Yol: {karar['yol']}")
         print(f"  Sure: {sure:.0f}ms")
         yanit = karar['yanit']
-        print(f"  Yanit ({len(yanit)} karakter): {yanit[:250]}")
+        print(f"  Yanit ({len(yanit)} kar): {yanit[:250]}")
         print(f"  Gemini devre disi: {km._gemini_devre_disi}")
         print(f"  DeepSeek devre disi: {km._deepseek_devre_disi}")
     except Exception as e:
