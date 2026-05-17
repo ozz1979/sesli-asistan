@@ -398,7 +398,8 @@ def tetik_kelime_kontrol(text, tetik="atlas"):
         "atlass",               # çift s
         "atlast",               # son t
         "at las",               # boşluklu
-        "atla",                 # eksik s
+        # NOT: "atla" çıkarıldı — Türkçe'de "atla" = "skip/geç" komutu.
+        # Tetik varyantı olarak kalırsa medya kontrol komutunu engeller.
         "atlası",               # ekli
         "atlasa",               # ekli
         "atlasın",              # ekli
