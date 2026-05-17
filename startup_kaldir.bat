@@ -1,8 +1,7 @@
 @echo off
-chcp 65001 >nul
-echo ═══════════════════════════════════════════
+echo ========================================
 echo   ATLAS - Otomatik Baslatma Kaldirma
-echo ═══════════════════════════════════════════
+echo ========================================
 echo.
 
 set "STARTUP=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup"
