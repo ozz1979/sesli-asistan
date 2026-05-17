@@ -417,10 +417,14 @@ def tetik_kelime_kontrol(text, tetik="atlas"):
 
     # ── Bulanık eşleşme — kelime bazlı kontrol ──
     if not bulundu:
+        # Gerçek Türkçe komut kelimeleri — tetik olarak algılanmamalı
+        komut_korumalari = {"atla", "atle", "otle", "atle"}  # atla=skip, geç
         kelimeler = text_lower.split()
         for kelime in kelimeler:
-            # Levenshtein benzeri hızlı kontrol
-            if len(kelime) >= 4 and len(kelime) <= 8:
+            if kelime in komut_korumalari:
+                continue  # Bilinen komut kelimesi — tetik değil
+            # Levenshtein benzeri hızlı kontrol (min 5 harf — "atla"(4) yakalanmasın)
+            if len(kelime) >= 5 and len(kelime) <= 8:
                 if kelime.startswith("at") and ("la" in kelime or "le" in kelime):
                     bulundu = True
                     eslesen = kelime
