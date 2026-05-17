@@ -37,6 +37,7 @@ class SesAlgilama:
         stt_cfg = config.get("stt", {})
 
         self._enerji_esigi = stt_cfg.get("enerji_esigi", 200)
+        self._kalibrasyon_esigi = self._enerji_esigi  # Kalibrasyon bazlını sakla
         self._dinamik_esik = stt_cfg.get("dinamik_esik", True)
         self._kalibrasyon_suresi = stt_cfg.get("kalibrasyon_suresi", 1.5)
         self._dinleme_suresi = stt_cfg.get("dinleme_suresi", 10)
@@ -87,6 +88,7 @@ class SesAlgilama:
             rms = np.sqrt(np.mean(kalibrasyon.astype(np.float64) ** 2))
             if self._dinamik_esik:
                 self._enerji_esigi = max(rms * 1.15, 50)
+            self._kalibrasyon_esigi = self._enerji_esigi  # Kalibrasyon bazlını sakla
             logger.info(f"Kalibrasyon tamamlandı. Ortam RMS: {rms:.0f}, Eşik: {self._enerji_esigi:.0f}")
 
             self._aktif = True
@@ -118,6 +120,9 @@ class SesAlgilama:
         import speech_recognition as sr
 
         timeout = timeout or self._dinleme_suresi
+
+        # Her döngüde eşiği kalibrasyon bazlına sıfırla (yükselme sorunu engellenir)
+        self._enerji_esigi = self._kalibrasyon_esigi
         esik = self._enerji_esigi
 
         logger.info(f"Dinleme basliyor (esik: {esik:.0f}, timeout: {timeout}s)")
@@ -173,9 +178,6 @@ class SesAlgilama:
                         logger.debug(f"Konuşma başladı (RMS: {rms:.0f})")
                     buffer.append(chunk.copy())
                     sessizlik_baslangic = None
-
-                    if self._dinamik_esik:
-                        self._enerji_esigi = self._enerji_esigi * 0.92 + rms * 0.08 * 0.4
 
                 elif konusma_basladi:
                     buffer.append(chunk.copy())
