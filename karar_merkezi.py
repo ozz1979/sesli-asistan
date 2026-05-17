@@ -68,6 +68,9 @@ class KararMerkezi:
         self._deepseek_client = None
         self._groq_client = None
         self._eski_sdk = False
+        self._gemini_devre_disi = False
+        self._deepseek_devre_disi = False
+        self._groq_devre_disi = False
         self._gemini_hazirla()
         self._deepseek_hazirla()
         self._groq_hazirla()
@@ -819,7 +822,7 @@ ATLAS: "Beni Ozgur yapti. Ben ATLAS'im, senin kisisel asistanin."
 
     def _gemini_sor(self, baglam, soru):
         """Gemini AI'a sor"""
-        if not self._gemini_client:
+        if not self._gemini_client or self._gemini_devre_disi:
             return None
 
         prompt = f"{baglam}\n\nKullanıcı: {soru}"
@@ -851,9 +854,11 @@ ATLAS: "Beni Ozgur yapti. Ben ATLAS'im, senin kisisel asistanin."
         except Exception as e:
             hata_str = str(e).lower()
             if "429" in hata_str or "quota" in hata_str or "exhausted" in hata_str:
-                logger.warning("Gemini kota dolmuş — sonraki AI'a geçiliyor...")
+                logger.warning("Gemini kota dolmuş — bu oturumda devre dışı bırakılıyor")
+                self._gemini_devre_disi = True
             else:
                 logger.error(f"Gemini hatası: {type(e).__name__}: {e}")
+                self._gemini_devre_disi = True
 
         return None
 
@@ -863,7 +868,7 @@ ATLAS: "Beni Ozgur yapti. Ben ATLAS'im, senin kisisel asistanin."
 
     def _deepseek_sor(self, baglam, soru):
         """DeepSeek AI'a sor — OpenAI uyumlu API"""
-        if not self._deepseek_client:
+        if not self._deepseek_client or self._deepseek_devre_disi:
             return None
 
         prompt = f"{baglam}\n\nKullanıcı: {soru}"
@@ -890,9 +895,14 @@ ATLAS: "Beni Ozgur yapti. Ben ATLAS'im, senin kisisel asistanin."
         except Exception as e:
             hata_str = str(e).lower()
             if "429" in hata_str or "quota" in hata_str or "402" in hata_str or "balance" in hata_str:
-                logger.warning("DeepSeek kota/bakiye sorunu — sonraki AI'a geçiliyor...")
+                logger.warning("DeepSeek kota/bakiye sorunu — bu oturumda devre dışı bırakılıyor")
+                self._deepseek_devre_disi = True
+            elif "401" in hata_str or "auth" in hata_str or "invalid" in hata_str:
+                logger.warning("DeepSeek API key geçersiz — bu oturumda devre dışı bırakılıyor")
+                self._deepseek_devre_disi = True
             else:
                 logger.error(f"DeepSeek hatası: {type(e).__name__}: {e}")
+                self._deepseek_devre_disi = True
 
         return None
 
@@ -902,7 +912,7 @@ ATLAS: "Beni Ozgur yapti. Ben ATLAS'im, senin kisisel asistanin."
 
     def _groq_sor(self, baglam, soru):
         """Groq AI'a sor — OpenAI uyumlu API, ücretsiz"""
-        if not self._groq_client:
+        if not self._groq_client or self._groq_devre_disi:
             return None
 
         prompt = f"{baglam}\n\nKullanıcı: {soru}"
