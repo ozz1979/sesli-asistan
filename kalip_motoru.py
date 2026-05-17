@@ -682,6 +682,52 @@ class KalipMotoru:
                     return f"Döviz kurunu şu an öğrenemedim {ad}, interneti kontrol eder misin?", "hata", 0.85
                 break
 
+        # ── 4c. Müzik / Medya kontrol ──
+        # "müzik aç", "şarkı çal", "YouTube'da X çal" vb.
+        muzik_tetik = False
+        # "X müzik aç/çal" veya "müzik aç/çal X"
+        if re.search(r"(?:müzik|muzik|şarkı|sarki)\s*(?:aç|ac|çal|cal|başlat|baslat|oynat)", metin):
+            muzik_tetik = True
+        elif re.search(r"(?:aç|ac|çal|cal|oynat)\s*(?:müzik|muzik|şarkı|sarki)", metin):
+            muzik_tetik = True
+        elif re.search(r"(?:youtube|yutup|yutube).{0,8}(?:aç|ac|çal|cal|oynat)\s+.+", metin):
+            muzik_tetik = True
+        elif re.search(r".+\s+(?:youtube|yutup|yutube).{0,5}(?:aç|ac|çal|cal|oynat)", metin):
+            muzik_tetik = True
+
+        if muzik_tetik:
+            # Arama sorgusunu çıkar (komut kelimelerini temizle)
+            sorgu = metin
+            temizle = ["müzik", "muzik", "şarkı", "sarki", "aç", "açar mısın",
+                        "açarmısın", "açabilir misin", "ac", "çal", "cal",
+                        "başlat", "baslat", "oynat", "youtube", "yutup", "yutube",
+                        "bana", "benim için", "biraz", "güzel", "lütfen"]
+            for sil in temizle:
+                sorgu = re.sub(r'\b' + re.escape(sil) + r'\b', '', sorgu, flags=re.IGNORECASE)
+            sorgu = re.sub(r'\s+', ' ', sorgu).strip()
+            if not sorgu:
+                sorgu = "popüler türkçe müzik"
+            basarili, mesaj = bk.muzik_cal(sorgu)
+            if basarili:
+                return f"YouTube'da {sorgu} çalınıyor {ad}!", "muzik_cal", 0.95
+            else:
+                return f"Müzik açılamadı: {mesaj}", "hata", 0.9
+
+        # Medya kontrol: "çal", "oynat", "duraklat", "durdur" (tek kelime)
+        metin_strip = metin.strip()
+        if metin_strip in ("çal", "cal", "oynat", "devam", "devam et"):
+            bk.medya_oynat_duraklat()
+            return f"Oynatıyorum {ad}!", "medya_kontrol", 0.95
+        if metin_strip in ("duraklat", "durdur", "bekle", "dur", "pause"):
+            bk.medya_oynat_duraklat()
+            return f"Duraklatıyorum {ad}.", "medya_kontrol", 0.95
+        if metin_strip in ("sonraki", "sonraki şarkı", "sonraki sarki", "sıradaki", "atla"):
+            bk.medya_sonraki()
+            return f"Sonraki parçaya geçiyorum {ad}.", "medya_kontrol", 0.95
+        if metin_strip in ("önceki", "önceki şarkı", "onceki sarki", "geri"):
+            bk.medya_onceki()
+            return f"Önceki parçaya dönüyorum {ad}.", "medya_kontrol", 0.95
+
         # ── 5. Web arama ──
         m = re.search(r"(?:internette?|google.?da|web.?de|araştır)\s+(.+?)(?:\s+ara)?$", metin)
         if not m:
