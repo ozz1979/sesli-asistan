@@ -506,6 +506,18 @@ class KalipMotoru:
         if yanit:
             return yanit
 
+        # ── 0c. GÜNCELLEME KOMUTU ──
+        guncelle_tetik = any(k in metin for k in [
+            "kendini güncelle", "kendini guncelle",
+            "güncelle", "guncelle",
+            "güncelleme kontrol", "guncelleme kontrol",
+            "güncelleme yap", "guncelleme yap",
+            "güncellemeyi kontrol et", "guncellemeyi kontrol et",
+            "update", "güncellemeyi başlat", "guncellemeyi baslat",
+        ])
+        if guncelle_tetik:
+            return f"Güncelleme kontrol ediliyor {ad}, bir saniye...", "guncelleme_baslat", 0.99
+
         # ── 1. Ses komutları ──
         for anahtar, islem in SES_KOMUTLARI.items():
             if anahtar in metin or turkce_normalize(anahtar) in metin_norm:
