@@ -21,6 +21,13 @@ import bilgisayar_kontrol as bk
 
 logger = logging.getLogger("ATLAS.kalip")
 
+# Web arama modulu
+try:
+    import web_arama
+    _WEB_ARAMA_VAR = True
+except ImportError:
+    _WEB_ARAMA_VAR = False
+
 # ============================================================
 # BİLGİSAYAR KOMUTLARI — Windows program haritası
 # ============================================================
@@ -999,6 +1006,28 @@ class KalipMotoru:
         if re.search(r"emoji.{0,8}(?:aç|ac|göster|goster|paneli?)", metin):
             basarili, mesaj = bk.emoji_paneli()
             return f"Emoji paneli açıldı {ad}!", "emoji", 0.95
+
+        # ── 24. Web Araştırma (Sistem 1) ──
+        # "araştır", "internette ara", "hakkında bilgi" gibi açık arama istekleri
+        if _WEB_ARAMA_VAR:
+            m_arastir = re.search(r"(?:araştır|arastır|arastir)\s*[:\-]?\s*(.+)", metin)
+            if not m_arastir:
+                m_arastir = re.search(r"(?:internette|google'?da|webde)\s+(?:ara|bak|bul)\s*[:\-]?\s*(.+)", metin)
+            if not m_arastir:
+                m_arastir = re.search(r"(.+?)\s+hakkında\s+(?:bilgi|araştır|arastir|bul)", metin)
+            if m_arastir:
+                sorgu = m_arastir.group(1).strip()
+                if sorgu and len(sorgu) > 2:
+                    try:
+                        sonuc = web_arama.arastir(sorgu)
+                        if sonuc["basarili"] and sonuc["sonuclar"]:
+                            ilk = sonuc["sonuclar"][0]
+                            ozet = ilk.get("ozet", "")[:200]
+                            return f"İşte bulduklarım {ad}: {ozet}", "web_arama", 0.90
+                        else:
+                            return f"Bu konuda bir sonuç bulamadım {ad}.", "web_arama", 0.85
+                    except Exception as e:
+                        logger.debug(f"Web arama kalip hatasi: {e}")
 
         return None, None, 0.0
 
