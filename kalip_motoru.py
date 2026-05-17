@@ -721,25 +721,27 @@ class KalipMotoru:
 
         # ── Müzik arama (yeni müzik aç) ──
         # "müzik aç", "şarkı çal", "YouTube'da X çal/bulup aç" vb.
+        # NOT: Türkçe ünsüz yumuşaması: müzik→müziği (k→ğ), şarkı→şarkıyı
+        # müzi[kğ] hem "müzik" hem "müziği/müziğe" yakalar
         muzik_tetik = False
-        # "X müzik aç/çal" veya "müzik aç/çal X" (arada "bulup", "biraz" gibi ekler olabilir)
-        if re.search(r"(?:müzik|muzik|şarkı|sarki).{0,15}(?:aç|ac|çal|cal|başlat|baslat|oynat)", metin):
+        # "X müzik(i) aç/çal" veya "müzik aç/çal X" (arada "bulup", "biraz" gibi ekler olabilir)
+        if re.search(r"(?:müzi[kğ]|muzi[kğ]|şarkı|sarki).{0,15}(?:aç|ac|çal|cal|başlat|baslat|oynat)", metin):
             muzik_tetik = True
-        elif re.search(r"(?:aç|ac|çal|cal|oynat).{0,8}(?:müzik|muzik|şarkı|sarki)", metin):
+        elif re.search(r"(?:aç|ac|çal|cal|oynat).{0,8}(?:müzi[kğ]|muzi[kğ]|şarkı|sarki)", metin):
             muzik_tetik = True
         elif re.search(r"(?:youtube|yutup|yutube).{0,12}(?:aç|ac|çal|cal|oynat|bul)", metin):
             muzik_tetik = True
         elif re.search(r".+\s+(?:youtube|yutup|yutube).{0,8}(?:aç|ac|çal|cal|oynat|bul)", metin):
             muzik_tetik = True
         # "X dinlemek istiyorum", "X dinle", "X çalsana"
-        elif re.search(r"(?:müzik|muzik|şarkı|sarki).{0,10}(?:dinle|dinlemek|çalsana|calsana|bul)", metin):
+        elif re.search(r"(?:müzi[kğ]|muzi[kğ]|şarkı|sarki).{0,10}(?:dinle|dinlemek|çalsana|calsana|bul)", metin):
             muzik_tetik = True
 
         if muzik_tetik:
             # Arama sorgusunu çıkar (komut kelimelerini temizle)
             sorgu = metin
-            temizle = ["müzik", "muzik", "şarkı", "sarki", "aç", "açar mısın",
-                        "açarmısın", "açabilir misin", "açar misin", "ac",
+            temizle = ["müziği", "müziğe", "müzik", "muzik", "şarkıyı", "şarkı", "sarki",
+                        "aç", "açar mısın", "açarmısın", "açabilir misin", "açar misin", "ac",
                         "çal", "cal", "çalsana", "calsana",
                         "başlat", "baslat", "oynat", "youtube", "yutup", "yutube",
                         "bana", "benim için", "biraz", "güzel", "lütfen",
