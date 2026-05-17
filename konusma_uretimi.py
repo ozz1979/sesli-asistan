@@ -50,6 +50,8 @@ ON_BELLEK_YANITLARI = [
     "Chrome açılıyor!",
     "Not Defteri açılıyor!",
     "Hesap Makinesi açılıyor!",
+    # Arka plan modu
+    "Hazırım!",
 ]
 
 
