@@ -543,47 +543,51 @@ def hava_durumu(sehir="Denizli"):
 
 def muzik_cal(sorgu):
     """
-    YouTube'da müzik ara ve ilk videoyu otomatik başlat.
-    1. YouTube arama URL'si açılır
-    2. Sayfa yüklendikten sonra ilk video thumbnail'ine tıklanır
+    YouTube'da müzik ara ve ilk videoyu doğrudan aç.
+    Koordinat tıklaması yerine video ID'sini programatik alır.
+    1. YouTube arama HTML'inden ilk video ID'si çekilir
+    2. youtube.com/watch?v=ID ile doğrudan video açılır
+    Fallback: ID bulunamazsa arama sayfasını açar
     """
-    import urllib.parse
+    import urllib.request, urllib.parse, re
 
     try:
-        import pyautogui
-    except ImportError:
-        url = f"https://www.youtube.com/results?search_query={urllib.parse.quote(sorgu)}"
-        os.startfile(url)
-        return True, f"YouTube'da '{sorgu}' araması yapıldı"
+        query = urllib.parse.quote(sorgu)
+        search_url = f"https://www.youtube.com/results?search_query={query}"
 
-    try:
-        url = f"https://www.youtube.com/results?search_query={urllib.parse.quote(sorgu)}"
-        os.startfile(url)
+        # YouTube arama sayfasının HTML'ini al
+        req = urllib.request.Request(search_url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                          "AppleWebKit/537.36 (KHTML, like Gecko) "
+                          "Chrome/125.0.0.0 Safari/537.36",
+            "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.5",
+        })
         logger.info(f"YouTube müzik arama: {sorgu}")
+        resp = urllib.request.urlopen(req, timeout=10)
+        html = resp.read().decode("utf-8", errors="ignore")
 
-        # Sayfa yüklensin (tarayıcı açılış + sayfa render)
-        time.sleep(6)
+        # İlk video ID'sini bul (11 karakter, YouTube standart format)
+        match = re.search(r'"videoId":"([a-zA-Z0-9_-]{11})"', html)
+        if match:
+            video_id = match.group(1)
+            video_url = f"https://www.youtube.com/watch?v={video_id}"
+            os.startfile(video_url)
+            logger.info(f"YouTube video açıldı: {video_url}")
+            return True, f"YouTube'da '{sorgu}' çalınıyor"
+        else:
+            # Fallback: video ID bulunamadı, arama sayfasını aç
+            logger.warning("YouTube video ID bulunamadı, arama sayfası açılıyor")
+            os.startfile(search_url)
+            return True, f"YouTube'da '{sorgu}' araması yapıldı"
 
-        ekran_w, ekran_h = pyautogui.size()
-        logger.info(f"Ekran çözünürlüğü: {ekran_w}x{ekran_h}")
-
-        # YouTube arama sonuçlarında ilk video thumbnail'i:
-        # Chrome UI (~75px) + YouTube header (~56px) + filtre (~44px) = ~175px üst boşluk
-        # İlk thumbnail ~200px yüksek → merkezi ~275px = ekranın %25'i (1080p'de)
-        # Thumbnail sol kenar: mini sidebar (~72px) + boşluk (~18px) = ~90px
-        # Thumbnail ~360px geniş → merkezi ~270px = ekranın %14'ü (1920'de)
-        # Güvenli: hem mini hem geniş sidebar için %20 x, %26 y
-        x = int(ekran_w * 0.20)
-        y = int(ekran_h * 0.26)
-        logger.info(f"İlk video tıklanıyor: ({x}, {y})")
-        pyautogui.click(x, y)
-
-        # Kısa bekleme — tıklama işe yaramadıysa Tab+Enter dene
-        time.sleep(1.5)
-
-        return True, f"YouTube'da '{sorgu}' çalınıyor"
     except Exception as e:
         logger.error(f"Müzik çalma hatası: {e}")
+        # Son fallback: arama URL'sini doğrudan aç
+        try:
+            import urllib.parse as up
+            os.startfile(f"https://www.youtube.com/results?search_query={up.quote(sorgu)}")
+        except Exception:
+            pass
         return False, str(e)
 
 
