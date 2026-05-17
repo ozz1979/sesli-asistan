@@ -363,6 +363,25 @@ def ses_ayarla(islem):
         return False, str(e)
 
 
+def ses_seviye_ayarla(yuzde):
+    """
+    Sistem sesini belirli yüzdeye ayarla (0-100).
+    pyautogui ile hızlı ses tuşu basımı kullanır.
+    """
+    yuzde = max(0, min(100, yuzde))
+    try:
+        import pyautogui
+        # Sesi sıfırla (50 kere azalt → %0), sonra hedef yüzdeye çıkar (her basış ≈ %2)
+        pyautogui.press("volumedown", presses=50, interval=0.01)
+        if yuzde > 0:
+            pyautogui.press("volumeup", presses=yuzde // 2, interval=0.01)
+        logger.info(f"Ses seviyesi: ~%{yuzde}")
+        return True, f"Ses %{yuzde}'e ayarlandı"
+    except Exception as e:
+        logger.error(f"Ses ayarı hatası: {e}")
+        return False, str(e)
+
+
 def tum_programlari_kapat():
     """
     Tüm açık kullanıcı pencerelerini kapatır.
@@ -573,6 +592,15 @@ def muzik_cal(sorgu):
             video_url = f"https://www.youtube.com/watch?v={video_id}"
             os.startfile(video_url)
             logger.info(f"YouTube video açıldı: {video_url}")
+
+            # Müzik açılınca sesi %30'a düşür — mikrofon kullanıcıyı duyabilsin
+            import threading
+            def _ses_kis():
+                time.sleep(2)  # Video yüklensin
+                ses_seviye_ayarla(30)
+                logger.info("Müzik modu: ses %30'a düşürüldü (mikrofon için)")
+            threading.Thread(target=_ses_kis, daemon=True).start()
+
             return True, f"YouTube'da '{sorgu}' çalınıyor"
         else:
             # Fallback: video ID bulunamadı, arama sayfasını aç
