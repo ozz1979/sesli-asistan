@@ -20,6 +20,25 @@ import logging
 
 logger = logging.getLogger("ATLAS.kontrol")
 
+# ── Müzik modu takibi ──
+_muzik_modu = False
+
+def muzik_durumu():
+    """Müzik çalıyor mu? (müzik modu aktif mi)"""
+    return _muzik_modu
+
+def _muzik_modu_ac():
+    """Müzik modu aktif et"""
+    global _muzik_modu
+    _muzik_modu = True
+    logger.info("Müzik modu: AKTİF")
+
+def _muzik_modu_kapat():
+    """Müzik modu kapat"""
+    global _muzik_modu
+    _muzik_modu = False
+    logger.info("Müzik modu: KAPALI")
+
 
 def metin_yaz(text):
     """
@@ -593,12 +612,13 @@ def muzik_cal(sorgu):
             os.startfile(video_url)
             logger.info(f"YouTube video açıldı: {video_url}")
 
-            # Müzik açılınca sesi %30'a düşür — mikrofon kullanıcıyı duyabilsin
+            # Müzik modu: sesi düşür + flag aç — mikrofon kullanıcıyı duyabilsin
+            _muzik_modu_ac()
             import threading
             def _ses_kis():
                 time.sleep(2)  # Video yüklensin
-                ses_seviye_ayarla(30)
-                logger.info("Müzik modu: ses %30'a düşürüldü (mikrofon için)")
+                ses_seviye_ayarla(20)
+                logger.info("Müzik modu: ses %20'ye düşürüldü (mikrofon için)")
             threading.Thread(target=_ses_kis, daemon=True).start()
 
             return True, f"YouTube'da '{sorgu}' çalınıyor"
