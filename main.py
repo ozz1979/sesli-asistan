@@ -112,6 +112,7 @@ class AtlasBeyin:
         self.arayuz = arayuz  # GUI sinyalleri
         self._calisiyor = False
         self._durum = "baslatiyor"
+        self._arka_plan = "--arka-plan" in sys.argv or "--arkaplan" in sys.argv
 
         # Hafıza dizini oluştur
         os.makedirs("hafiza", exist_ok=True)
@@ -242,7 +243,13 @@ class AtlasBeyin:
         self._gui_surum(surum)
 
         # 8. İlk tanışma veya karşılama
-        if not self.kimlik.kullanici_tanimli_mi():
+        if self._arka_plan:
+            # Arka plan modu — sessiz başla, "Atlas" denince aktifleş
+            from dikkat_filtresi import DikkatModu
+            self._gui_mesaj("sistem", "🔇 Arka plan modu — 'Atlas' diye seslen!")
+            self.dikkat.mod = DikkatModu.PASIF
+            self._gui_mod("pasif")
+        elif not self.kimlik.kullanici_tanimli_mi():
             self._ilk_tanisma()
         else:
             self._karsilama()
@@ -386,7 +393,8 @@ class AtlasBeyin:
                     continue
 
                 if islem == "tetik":
-                    # Sadece "Atlas" dedi — yanıt ver
+                    # Sadece "Atlas" dedi — pencereyi göster ve yanıt ver
+                    self._gui_pencere_goster()
                     self._gui_mesaj("kullanici", metin)
                     ad = self.kimlik.kullanici_adi()
                     tetik_yanit = f"Evet {ad}, buradayım! Seni dinliyorum." if ad else "Evet, buradayım! Seni dinliyorum."
@@ -396,7 +404,8 @@ class AtlasBeyin:
                     continue
 
                 if islem in ("komut", "tetik_komut"):
-                    # Komutu işle
+                    # Pencereyi göster ve komutu işle
+                    self._gui_pencere_goster()
                     self._komut_isle(sonuc["ham_metin"], temiz_metin, sonuc["niyet"])
 
             except Exception as e:
@@ -651,6 +660,14 @@ class AtlasBeyin:
         if self.arayuz:
             self.arayuz.duygu_guncelle.emit(duygu)
 
+    def _gui_pencere_goster(self):
+        """Arka plan modundaysa pencereyi göster"""
+        if self.arayuz:
+            try:
+                self.arayuz.pencere_goster.emit()
+            except Exception:
+                pass
+
 
 # ============================================================
 # ANA GİRİŞ NOKTASI
@@ -658,11 +675,14 @@ class AtlasBeyin:
 
 def main():
     """ATLAS başlat"""
+    # Arka plan modu kontrolü
+    arka_plan = "--arka-plan" in sys.argv or "--arkaplan" in sys.argv
+
     # Config yükle
     config = config_yukle()
     logging_ayarla(config.get("sistem", {}).get("log_seviyesi", "INFO"))
     logger.info("=" * 50)
-    logger.info(f"ATLAS v{config.get('version', '?')} başlatılıyor")
+    logger.info(f"ATLAS v{config.get('version', '?')} başlatılıyor" + (" (ARKA PLAN)" if arka_plan else ""))
     logger.info("=" * 50)
 
     # PyQt6 uygulama
@@ -674,7 +694,12 @@ def main():
 
     # Arayüz oluştur
     pencere = AtlasArayuz()
-    pencere.show()
+
+    if arka_plan:
+        # Arka plan modu: pencere gizli başlar, "Atlas" denince açılır
+        logger.info("Arka plan modu — pencere gizli, ses dinleniyor...")
+    else:
+        pencere.show()
 
     # Beyin oluştur ve başlat
     beyin = AtlasBeyin(config, pencere.sinyaller)
