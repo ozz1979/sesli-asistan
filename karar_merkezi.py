@@ -24,6 +24,15 @@ import os
 
 logger = logging.getLogger("ATLAS.karar")
 
+# Web arama modulu
+try:
+    import web_arama
+    WEB_ARAMA_AKTIF = True
+    logger.info("Web arama modulu yuklendi")
+except ImportError:
+    WEB_ARAMA_AKTIF = False
+    logger.info("Web arama modulu bulunamadi — web arama devre disi")
+
 
 class KararMerkezi:
     """
@@ -176,6 +185,12 @@ DOGRULUK KURALLARI (COK ONEMLI):
 - DOVIZ KURU, DOLAR KURU, EURO KURU gibi GUNCEL FIYAT sorularinda ASLA tahmin yapma, ASLA eski bilgi verme. Sadece "kur bilgisini aliyorum" de, sistem otomatik guncel veriyi ceker.
 - Yanlislikla yanlis bir sey soylersen, kullanici duzeltince "haklisin, duzeltiyorum" de.
 
+WEB ARAMA SONUCLARI:
+- Baglamda "Web arama sonuclari" bolumu varsa, bu internetten gelen GUNCEL bilgidir.
+- Bu bilgileri kullanarak dogru ve guncel cevap ver.
+- Kaynak gosterme, sadece bilgiyi dogal bir sekilde aktar.
+- Web sonuclari yoksa kendi bilginle cevapla.
+
 EN ONEMLI KURAL — SOYLE vs GOSTER AYRIMI:
 - Kullanici "soyle", "anlat", "ne", "nedir", "kac", "nasil" derse → SOZLU CEVAP VER, komut KULLANMA.
 - Kullanici "goster", "ara", "ac", "bak", "internette" derse → KOMUT kullan.
@@ -220,6 +235,7 @@ Komutlar:
 - [KOMUT:pencere_degistir] → Sonraki pencereye gec (Alt+Tab)
 - [KOMUT:yakalama] → Ekran yakalama araci ac
 - [KOMUT:emoji] → Emoji panelini ac
+- [KOMUT:web_ara:SORGU] → Internette arastirma yap (sonuclari sesli oku)
 
 KURALLAR:
 - Komut etiketini yanitin SONUNA yaz. Kullanici etiketi duymaz.
@@ -485,6 +501,20 @@ ATLAS: "Beni Ozgur yapti. Ben ATLAS'im, senin kisisel asistanin."
                     basarili, sonuc = bk.emoji_paneli()
                     sonuclar.append(("ok" if basarili else "hata", sonuc))
 
+                elif tip == "web_ara":
+                    if WEB_ARAMA_AKTIF and param:
+                        try:
+                            arama_sonuc = web_arama.arastir(param, detayli=True)
+                            if arama_sonuc["basarili"] and arama_sonuc["sonuclar"]:
+                                ozet = arama_sonuc["sonuclar"][0].get("ozet", "")
+                                sonuclar.append(("ok", ozet[:300]))
+                            else:
+                                sonuclar.append(("hata", "Sonuc bulunamadi"))
+                        except Exception as e2:
+                            sonuclar.append(("hata", str(e2)))
+                    else:
+                        sonuclar.append(("hata", "Web arama devre disi"))
+
                 elif tip == "kapat_program":
                     # Program kapatma — taskkill kullan
                     exe_map = {
@@ -552,8 +582,26 @@ ATLAS: "Beni Ozgur yapti. Ben ATLAS'im, senin kisisel asistanin."
                 "kategori": kategori
             }
 
+        # ──── WEB ARAMA: Gerekiyorsa internetten bilgi topla ────
+        web_baglam = ""
+        if WEB_ARAMA_AKTIF:
+            try:
+                gerekli, sorgu = web_arama.arama_gerekli_mi(text)
+                if gerekli and sorgu:
+                    logger.info(f"Web arama tetiklendi: '{sorgu}'")
+                    arama_sonuc = web_arama.arastir(sorgu)
+                    if arama_sonuc["basarili"]:
+                        web_baglam = "\n\n" + arama_sonuc["baglam"]
+                        logger.info(f"Web arama baglami eklendi ({arama_sonuc['sure_ms']}ms, {len(arama_sonuc['sonuclar'])} sonuc)")
+            except Exception as e:
+                logger.debug(f"Web arama hatasi (kritik degil): {e}")
+
         # ──── SİSTEM 2: AI Zinciri ────
         baglam = self._baglam_olustur(text, niyet, duygu_sonucu)
+
+        # Web arama baglami varsa ekle
+        if web_baglam:
+            baglam = baglam + web_baglam
 
         # Zincir: Gemini → DeepSeek → Groq → Ollama → Fallback
         ai_yanit = self._gemini_sor(baglam, text)
