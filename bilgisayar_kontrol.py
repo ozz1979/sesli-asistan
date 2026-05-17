@@ -535,3 +535,47 @@ def hava_durumu(sehir="Denizli"):
     except Exception as e:
         logger.error(f"Hava durumu hatası: {e}")
         return False, str(e)
+
+
+def doviz_kuru(birim="USD"):
+    """
+    Güncel döviz kuru sorgula (TRY bazlı).
+    birim: USD, EUR, GBP, vb.
+    Returns: (True, dict) veya (False, hata_mesajı)
+    """
+    import urllib.request
+    import json as j
+
+    birim = birim.upper().strip()
+
+    apis = [
+        f"https://open.er-api.com/v6/latest/{birim}",
+        f"https://api.exchangerate-api.com/v4/latest/{birim}",
+    ]
+
+    for api_url in apis:
+        try:
+            req = urllib.request.Request(api_url, headers={"User-Agent": "ATLAS/1.0"})
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                data = j.loads(resp.read().decode("utf-8"))
+
+            rates = data.get("rates", {})
+            try_rate = rates.get("TRY")
+            if try_rate:
+                sonuc = {
+                    "birim": birim,
+                    "kur": round(float(try_rate), 2),
+                    "tum_kurlar": {
+                        "TRY": rates.get("TRY"),
+                        "EUR": rates.get("EUR"),
+                        "USD": rates.get("USD"),
+                        "GBP": rates.get("GBP"),
+                    }
+                }
+                logger.info(f"Döviz kuru: 1 {birim} = {sonuc['kur']} TRY")
+                return True, sonuc
+        except Exception as e:
+            logger.warning(f"Döviz API hatası ({api_url}): {e}")
+            continue
+
+    return False, "Döviz kuru alınamadı"
