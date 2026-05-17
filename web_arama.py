@@ -1,10 +1,15 @@
 """
-ATLAS - Web Arama Motoru
-=========================
+ATLAS - Web Arama Motoru v2
+============================
 Beyin Karsiligi: Duyusal Korteks + Islem Bellegi Genisletmesi
 Gorev: Internetten bilgi toplama, ozet cikarma, AI'a baglam saglama
 
-DuckDuckGo arama (API key gerektirmez) + basit web kazima.
+Arama Hiyerarsisi:
+1. Wikipedia TR Arama + Icerik Cikarma (en guvenilir)
+2. Wikipedia EN Fallback (Turkce yoksa)
+3. DuckDuckGo Instant Answer API (hizli direkt cevaplar)
+4. Web sayfa okuma (detayli bilgi icin)
+
 ATLAS artik internetteki guncel bilgilere erisebilir.
 """
 
@@ -57,7 +62,6 @@ def _html_temizle(html_text):
         cikarici.feed(html_text)
         return cikarici.getir()
     except Exception:
-        # Fallback: regex ile temizle
         metin = re.sub(r'<script[^>]*>.*?</script>', '', html_text, flags=re.DOTALL | re.IGNORECASE)
         metin = re.sub(r'<style[^>]*>.*?</style>', '', metin, flags=re.DOTALL | re.IGNORECASE)
         metin = re.sub(r'<[^>]+>', ' ', metin)
@@ -66,15 +70,23 @@ def _html_temizle(html_text):
 
 
 def _url_getir(url, timeout=8):
-    """URL icerigini indir. Basit HTTP GET."""
+    """URL icerigini indir. Basit HTTP GET. Windows SSL uyumlu."""
     try:
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "User-Agent": "ATLAS-Sesli-Asistan/1.0 (Windows; Python) — bilgi arama botu",
             "Accept": "text/html,application/xhtml+xml,application/json",
             "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.5",
         }
         req = urllib.request.Request(url, headers=headers)
-        resp = urllib.request.urlopen(req, timeout=timeout)
+        try:
+            resp = urllib.request.urlopen(req, timeout=timeout)
+        except Exception:
+            # Windows SSL sertifika hatasi fallback
+            import ssl
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            resp = urllib.request.urlopen(req, timeout=timeout, context=ctx)
         charset = resp.headers.get_content_charset() or "utf-8"
         return resp.read().decode(charset, errors="replace")
     except Exception as e:
@@ -83,17 +95,103 @@ def _url_getir(url, timeout=8):
 
 
 # ═════════════════════════════════════════════════════════
-# DUCKDUCKGO ARAMA (API KEY GEREKTIRMEZ)
+# WIKIPEDIA ARAMA (EN GÜVENİLİR KAYNAK)
 # ═════════════════════════════════════════════════════════
 
-def duckduckgo_ara(sorgu, max_sonuc=5):
+def _wikipedia_ara(sorgu, dil="tr", max_sonuc=3):
     """
-    DuckDuckGo Instant Answer API + HTML arama.
-    Returns: list of {"baslik": str, "url": str, "ozet": str}
+    Wikipedia Search API + Extract API.
+    En guvenilir arama kaynagi — her zaman calisir, API key gerektirmez.
+
+    Returns: list of {"baslik": str, "url": str, "ozet": str, "kaynak": str}
     """
     sonuclar = []
 
-    # 1. DuckDuckGo Instant Answer API (hizli, yapilandirilmis)
+    try:
+        # Adim 1: Arama yap
+        arama_params = urllib.parse.urlencode({
+            "action": "query",
+            "list": "search",
+            "srsearch": sorgu,
+            "format": "json",
+            "utf8": "1",
+            "srlimit": str(max_sonuc),
+        })
+        arama_url = f"https://{dil}.wikipedia.org/w/api.php?{arama_params}"
+        arama_icerik = _url_getir(arama_url, timeout=8)
+
+        if not arama_icerik:
+            return sonuclar
+
+        arama_data = json.loads(arama_icerik)
+        arama_sonuclari = arama_data.get("query", {}).get("search", [])
+
+        if not arama_sonuclari:
+            return sonuclar
+
+        # Adim 2: Bulunan sayfalarin iceriklerini al
+        basliklar = "|".join(s["title"] for s in arama_sonuclari)
+        icerik_params = urllib.parse.urlencode({
+            "action": "query",
+            "prop": "extracts",
+            "exintro": "1",
+            "explaintext": "1",
+            "titles": basliklar,
+            "format": "json",
+            "utf8": "1",
+        })
+        icerik_url = f"https://{dil}.wikipedia.org/w/api.php?{icerik_params}"
+        icerik_data_str = _url_getir(icerik_url, timeout=8)
+
+        if not icerik_data_str:
+            # Icerik alinamazsa arama snippet'lerini kullan
+            for sr in arama_sonuclari:
+                snippet = re.sub(r'<[^>]+>', '', sr.get("snippet", "")).strip()
+                if snippet:
+                    baslik = sr["title"]
+                    sonuclar.append({
+                        "baslik": baslik,
+                        "url": f"https://{dil}.wikipedia.org/wiki/{urllib.parse.quote(baslik.replace(' ', '_'))}",
+                        "ozet": snippet[:500],
+                        "kaynak": f"wikipedia_{dil}_snippet"
+                    })
+            return sonuclar
+
+        icerik_data = json.loads(icerik_data_str)
+        sayfalar = icerik_data.get("query", {}).get("pages", {})
+
+        for sayfa_id, sayfa in sayfalar.items():
+            if sayfa_id == "-1":
+                continue
+            baslik = sayfa.get("title", "")
+            icerik = sayfa.get("extract", "")
+            if icerik and len(icerik) > 30:
+                sonuclar.append({
+                    "baslik": baslik,
+                    "url": f"https://{dil}.wikipedia.org/wiki/{urllib.parse.quote(baslik.replace(' ', '_'))}",
+                    "ozet": icerik[:800],
+                    "kaynak": f"wikipedia_{dil}"
+                })
+
+    except Exception as e:
+        logger.debug(f"Wikipedia {dil} arama hatasi: {e}")
+
+    return sonuclar
+
+
+# ═════════════════════════════════════════════════════════
+# DUCKDUCKGO INSTANT ANSWER API
+# ═════════════════════════════════════════════════════════
+
+def _duckduckgo_instant(sorgu):
+    """
+    DuckDuckGo Instant Answer API — direkt cevaplar icin.
+    API key gerektirmez, ama sadece bazi sorgularda sonuc verir.
+
+    Returns: list of {"baslik": str, "url": str, "ozet": str, "kaynak": str}
+    """
+    sonuclar = []
+
     try:
         params = urllib.parse.urlencode({
             "q": sorgu,
@@ -105,129 +203,76 @@ def duckduckgo_ara(sorgu, max_sonuc=5):
         url = f"https://api.duckduckgo.com/?{params}"
         icerik = _url_getir(url, timeout=6)
 
-        if icerik:
-            data = json.loads(icerik)
+        if not icerik:
+            return sonuclar
 
-            # Abstract (Wikipedia vs.)
-            abstract = data.get("AbstractText", "").strip()
-            abstract_url = data.get("AbstractURL", "")
-            if abstract:
-                sonuclar.append({
-                    "baslik": data.get("Heading", sorgu),
-                    "url": abstract_url,
-                    "ozet": abstract[:500],
-                    "kaynak": "duckduckgo_instant"
-                })
+        data = json.loads(icerik)
 
-            # Answer (direkt cevap)
-            answer = data.get("Answer", "").strip()
-            if answer:
-                sonuclar.append({
-                    "baslik": "Direkt Cevap",
-                    "url": "",
-                    "ozet": answer[:500],
-                    "kaynak": "duckduckgo_answer"
-                })
+        # Abstract (genellikle Wikipedia'dan)
+        abstract = data.get("AbstractText", "").strip()
+        abstract_url = data.get("AbstractURL", "")
+        heading = data.get("Heading", "").strip()
+        if abstract and len(abstract) > 20:
+            sonuclar.append({
+                "baslik": heading or sorgu,
+                "url": abstract_url,
+                "ozet": abstract[:500],
+                "kaynak": "duckduckgo_instant"
+            })
 
-            # Related Topics
-            for topic in data.get("RelatedTopics", [])[:3]:
-                if isinstance(topic, dict) and "Text" in topic:
-                    sonuclar.append({
-                        "baslik": topic.get("Text", "")[:80],
-                        "url": topic.get("FirstURL", ""),
-                        "ozet": topic.get("Text", "")[:300],
-                        "kaynak": "duckduckgo_related"
-                    })
+        # Direkt cevap
+        answer = data.get("Answer", "").strip()
+        if answer and len(answer) > 5:
+            sonuclar.append({
+                "baslik": "Direkt Cevap",
+                "url": "",
+                "ozet": answer[:500],
+                "kaynak": "duckduckgo_answer"
+            })
 
     except Exception as e:
         logger.debug(f"DuckDuckGo Instant API hatasi: {e}")
 
-    # 2. DuckDuckGo HTML arama (fallback — daha fazla sonuc)
-    if len(sonuclar) < 2:
-        try:
-            params = urllib.parse.urlencode({"q": sorgu})
-            url = f"https://html.duckduckgo.com/html/?{params}"
-            html = _url_getir(url, timeout=8)
+    return sonuclar
 
-            if html:
-                # Basit regex ile sonuc cikar
-                # DuckDuckGo HTML sayfasindaki sonuc bloklari
-                bloklar = re.findall(
-                    r'<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)</a>.*?'
-                    r'<a[^>]*class="result__snippet"[^>]*>(.*?)</a>',
-                    html, re.DOTALL
-                )
 
-                for href, baslik_html, ozet_html in bloklar[:max_sonuc]:
-                    baslik = _html_temizle(baslik_html).strip()
-                    ozet = _html_temizle(ozet_html).strip()
-                    # DuckDuckGo redirect URL'sini coz
-                    gercek_url = href
-                    if "uddg=" in href:
-                        m = re.search(r'uddg=([^&]+)', href)
-                        if m:
-                            gercek_url = urllib.parse.unquote(m.group(1))
+# ═════════════════════════════════════════════════════════
+# ANA ARAMA FONKSİYONU
+# ═════════════════════════════════════════════════════════
 
-                    if baslik and ozet:
-                        sonuclar.append({
-                            "baslik": baslik[:100],
-                            "url": gercek_url,
-                            "ozet": ozet[:300],
-                            "kaynak": "duckduckgo_html"
-                        })
+def duckduckgo_ara(sorgu, max_sonuc=5):
+    """
+    Birlesik arama: Wikipedia TR → Wikipedia EN → DuckDuckGo Instant
+    Returns: list of {"baslik": str, "url": str, "ozet": str, "kaynak": str}
+    """
+    tum_sonuclar = []
 
-        except Exception as e:
-            logger.debug(f"DuckDuckGo HTML arama hatasi: {e}")
+    # 1. Wikipedia TR (en guvenilir)
+    wiki_tr = _wikipedia_ara(sorgu, dil="tr", max_sonuc=3)
+    tum_sonuclar.extend(wiki_tr)
+    logger.info(f"Wikipedia TR: '{sorgu}' -> {len(wiki_tr)} sonuc")
 
-    # 3. Wikipedia Turkce fallback (eger hala az sonuc varsa)
-    if len(sonuclar) < 2:
-        try:
-            wiki_sorgu = urllib.parse.quote(sorgu)
-            wiki_url = f"https://tr.wikipedia.org/api/rest_v1/page/summary/{wiki_sorgu}"
-            wiki_icerik = _url_getir(wiki_url, timeout=5)
-            if wiki_icerik:
-                wiki_data = json.loads(wiki_icerik)
-                wiki_ozet = wiki_data.get("extract", "")
-                wiki_baslik = wiki_data.get("title", sorgu)
-                if wiki_ozet and len(wiki_ozet) > 30:
-                    sonuclar.append({
-                        "baslik": wiki_baslik,
-                        "url": wiki_data.get("content_urls", {}).get("desktop", {}).get("page", ""),
-                        "ozet": wiki_ozet[:500],
-                        "kaynak": "wikipedia_tr"
-                    })
-        except Exception as e:
-            logger.debug(f"Wikipedia fallback hatasi: {e}")
+    # 2. DuckDuckGo Instant (hizli direkt cevaplar)
+    ddg = _duckduckgo_instant(sorgu)
+    tum_sonuclar.extend(ddg)
+    logger.info(f"DuckDuckGo Instant: '{sorgu}' -> {len(ddg)} sonuc")
 
-    # 4. Wikipedia EN fallback (Turkce yoksa)
-    if len(sonuclar) < 1:
-        try:
-            wiki_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{wiki_sorgu}"
-            wiki_icerik = _url_getir(wiki_url, timeout=5)
-            if wiki_icerik:
-                wiki_data = json.loads(wiki_icerik)
-                wiki_ozet = wiki_data.get("extract", "")
-                wiki_baslik = wiki_data.get("title", sorgu)
-                if wiki_ozet and len(wiki_ozet) > 30:
-                    sonuclar.append({
-                        "baslik": wiki_baslik,
-                        "url": wiki_data.get("content_urls", {}).get("desktop", {}).get("page", ""),
-                        "ozet": wiki_ozet[:500],
-                        "kaynak": "wikipedia_en"
-                    })
-        except Exception as e:
-            logger.debug(f"Wikipedia EN fallback hatasi: {e}")
+    # 3. Wikipedia EN fallback (Turkce sonuc azsa)
+    if len(tum_sonuclar) < 2:
+        wiki_en = _wikipedia_ara(sorgu, dil="en", max_sonuc=2)
+        tum_sonuclar.extend(wiki_en)
+        logger.info(f"Wikipedia EN: '{sorgu}' -> {len(wiki_en)} sonuc")
 
     # Tekrar eden sonuclari kaldir
     gorulen = set()
     benzersiz = []
-    for s in sonuclar:
-        anahtar = s["ozet"][:100]
+    for s in tum_sonuclar:
+        anahtar = s["ozet"][:80].lower()
         if anahtar not in gorulen:
             gorulen.add(anahtar)
             benzersiz.append(s)
 
-    logger.info(f"Web arama: '{sorgu}' -> {len(benzersiz)} sonuc")
+    logger.info(f"Toplam arama: '{sorgu}' -> {len(benzersiz)} benzersiz sonuc")
     return benzersiz[:max_sonuc]
 
 
@@ -247,13 +292,10 @@ def sayfa_oku(url, max_karakter=2000):
 
         metin = _html_temizle(html)
 
-        # Cok kisa icerik anlamsiz olabilir
         if len(metin) < 50:
             return None
 
-        # Max karakter siniri
         if len(metin) > max_karakter:
-            # Cumle sonunda kes
             kesim = metin[:max_karakter]
             son_nokta = kesim.rfind(".")
             if son_nokta > max_karakter * 0.5:
@@ -275,15 +317,16 @@ def sayfa_oku(url, max_karakter=2000):
 def arastir(sorgu, detayli=True):
     """
     Ana arastirma fonksiyonu.
-    1. DuckDuckGo'da ara
-    2. En iyi 1-2 sonucun sayfasini oku (detayli modda)
+    1. Wikipedia + DuckDuckGo'da ara
+    2. En iyi sonucun sayfasini oku (detayli modda)
     3. AI'a gonderilebilecek yapilandirilmis baglam dondur
 
     Returns: dict {
         "sorgu": str,
         "sonuclar": list,
-        "baglam": str,  # AI'a gonderilecek metin
-        "basarili": bool
+        "baglam": str,
+        "basarili": bool,
+        "sure_ms": int
     }
     """
     baslangic = time.time()
@@ -292,12 +335,13 @@ def arastir(sorgu, detayli=True):
     sonuclar = duckduckgo_ara(sorgu)
 
     if not sonuclar:
+        sure = int((time.time() - baslangic) * 1000)
         return {
             "sorgu": sorgu,
             "sonuclar": [],
             "baglam": "",
             "basarili": False,
-            "sure_ms": int((time.time() - baslangic) * 1000)
+            "sure_ms": sure
         }
 
     # 2. Baglam olustur
@@ -307,16 +351,21 @@ def arastir(sorgu, detayli=True):
         baglam_parcalari.append(f"\n{i}. {s['baslik']}")
         baglam_parcalari.append(f"   {s['ozet']}")
 
-    # 3. Detayli modda ilk sonucun sayfasini da oku
+    # 3. Detayli modda ek sayfa oku (Wikipedia zaten icerik veriyor,
+    #    bu sadece Wikipedia disindaki kaynaklar icin)
     if detayli and sonuclar:
         for s in sonuclar[:2]:
             url = s.get("url", "")
+            kaynak = s.get("kaynak", "")
+            # Wikipedia zaten tam icerik verdi, tekrar okumaya gerek yok
+            if "wikipedia" in kaynak:
+                continue
             if url and url.startswith("http"):
                 icerik = sayfa_oku(url, max_karakter=1500)
                 if icerik:
                     baglam_parcalari.append(f"\nDetay ({s['baslik'][:50]}):")
                     baglam_parcalari.append(icerik[:1500])
-                    break  # Bir sayfa yeterli
+                    break
 
     baglam = "\n".join(baglam_parcalari)
     sure = int((time.time() - baslangic) * 1000)
@@ -340,24 +389,10 @@ def arama_gerekli_mi(metin):
     """
     Kullanicinin sorusunun internet aramasi gerektirip gerektirmedigini belirle.
     Returns: (gerekli: bool, sorgu: str veya None)
-
-    Gerekli olan durumlar:
-    - Guncel bilgi (fiyat, haber, skor, hava durumu, deprem, nufus)
-    - "arastir", "bul", "nedir" gibi arastirma niyeti
-    - Nadir/spesifik bilgi sorulari
-    - "kimdir", "ne zaman", "nerede", "kac", "nasil" gibi ansiklopedik sorular
-    - "son X" gibi guncel durum sorulari
-
-    Gerekli OLMAYAN durumlar:
-    - Sohbet ("nasilsin", "merhaba")
-    - Komut ("chrome ac", "sesi kapat", "muzik ac")
-    - Basit matematik
-    - Kisisel bilgi ("adim ne")
     """
     metin_lower = metin.lower().strip()
 
-    # 0. Once kesinlikle ARAMA GEREKTIRMEYEN durumlar (erken cikis)
-    # Komutlar, sohbet, kisisel sorular
+    # 0. Kesinlikle ARAMA GEREKTIRMEYEN durumlar (erken cikis)
     komut_kelimeleri = [
         r"^(?:aç|ac|kapat|kapa|başlat|baslat|çalıştır|calistir|durdur|küçült|kucult|büyüt|buyut)",
         r"(?:sesi?|sesini?|parlakl|parlaklik|ekran[ıi]?)\s*(?:aç|ac|kapat|kapa|art|azalt|ayarla|düşür|dusur|yükselt|yukselt)",
@@ -391,7 +426,7 @@ def arama_gerekli_mi(metin):
             sorgu = re.sub(r"\s*(ara|bak|bul)\s*$", "", sorgu).strip()
             return True, sorgu or metin_lower
 
-    # 2. Bilgi sorulari — ansiklopedik (genis kaliplar)
+    # 2. Ansiklopedik bilgi sorulari
     bilgi_kaliplari = [
         r"(.+?)\s+(?:kimdir|kim(?:miş|mis|dir)?)",
         r"(.+?)\s+(?:nedir|ne(?:ymiş|ymis|dir)?|ne\s+demek)",
@@ -411,7 +446,7 @@ def arama_gerekli_mi(metin):
         if m:
             return True, metin_lower
 
-    # 3. Guncel veri sorulari (fiyat, deprem, mac, secim, hava...)
+    # 3. Guncel veri sorulari
     guncel_kaliplari = [
         r"(?:bitcoin|btc|ethereum|eth|kripto)",
         r"(?:altın|altin|gram\s*altın|gram\s*altin)",
@@ -427,12 +462,11 @@ def arama_gerekli_mi(metin):
         if re.search(kalip, metin_lower):
             return True, metin_lower
 
-    # 4. "son X" kalıbı — genellikle güncel bilgi ister
+    # 4. "son X" kalıbı
     if re.search(r"^son\s+\w+", metin_lower):
         return True, metin_lower
 
-    # 5. Soru kalıbı tespiti — genel bilgi soruları
-    # "X nedir", "X kim", "X nerede", "X ne zaman", "X kaç", "X nasıl"
+    # 5. Genel soru kelimeleri
     soru_kelimeleri = ["nedir", "kimdir", "nerede", "nereye", "nasıl", "nasil",
                        "neden", "niçin", "nicin", "kaç", "kac", "ne kadar",
                        "hangi", "ne zaman"]
@@ -451,11 +485,12 @@ def arama_gerekli_mi(metin):
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
 
-    # Test aramalari
     testler = [
-        "Python programlama dili nedir",
+        "Elon Musk kimdir",
+        "yapay zeka nedir",
         "Turkiye nufusu kac",
-        "yapay zeka son gelismeler",
+        "son depremler",
+        "Bitcoin fiyati ne kadar",
     ]
 
     for test in testler:
@@ -466,4 +501,4 @@ if __name__ == "__main__":
         print(f"Sure: {sonuc['sure_ms']}ms")
         print(f"Sonuc sayisi: {len(sonuc['sonuclar'])}")
         if sonuc["baglam"]:
-            print(f"Baglam (ilk 500):\n{sonuc['baglam'][:500]}")
+            print(f"Baglam (ilk 300):\n{sonuc['baglam'][:300]}")
