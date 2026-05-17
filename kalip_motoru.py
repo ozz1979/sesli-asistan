@@ -695,6 +695,31 @@ class KalipMotoru:
                 break
 
         # ── 4c. Müzik / Medya kontrol ──
+
+        # ÖNCELİKLE medya navigasyon kontrolü — "sıradaki", "sonraki", "önceki" vb.
+        # Bu kontrol müzik arama'dan ÖNCE olmalı, yoksa "sıradaki müziği aç" → müzik arama'ya düşer
+        metin_strip = metin.strip()
+
+        # Oynat/Duraklat (tek kelime)
+        if metin_strip in ("çal", "cal", "oynat", "devam", "devam et"):
+            bk.medya_oynat_duraklat()
+            return f"Oynatıyorum {ad}!", "medya_kontrol", 0.95
+        if metin_strip in ("duraklat", "durdur", "bekle", "dur", "pause"):
+            bk.medya_oynat_duraklat()
+            return f"Duraklatıyorum {ad}.", "medya_kontrol", 0.95
+
+        # Sonraki parça — esnek eşleşme
+        if re.search(r"(?:sonraki|sıradaki|siradaki|bir\s*sonraki|atla|geç|sonrakine)", metin):
+            # "sonraki müziği aç", "sıradaki şarkıya geç", "atla" vb.
+            bk.medya_sonraki()
+            return f"Sonraki parçaya geçiyorum {ad}.", "medya_kontrol", 0.95
+
+        # Önceki parça — esnek eşleşme
+        if re.search(r"(?:önceki|onceki|bir\s*önceki|bir\s*onceki|öncekine|geri\s*al)", metin):
+            bk.medya_onceki()
+            return f"Önceki parçaya dönüyorum {ad}.", "medya_kontrol", 0.95
+
+        # ── Müzik arama (yeni müzik aç) ──
         # "müzik aç", "şarkı çal", "YouTube'da X çal/bulup aç" vb.
         muzik_tetik = False
         # "X müzik aç/çal" veya "müzik aç/çal X" (arada "bulup", "biraz" gibi ekler olabilir)
@@ -730,21 +755,6 @@ class KalipMotoru:
                 return f"YouTube'da {sorgu} çalınıyor {ad}!", "muzik_cal", 0.95
             else:
                 return f"Müzik açılamadı: {mesaj}", "hata", 0.9
-
-        # Medya kontrol: "çal", "oynat", "duraklat", "durdur" (tek kelime)
-        metin_strip = metin.strip()
-        if metin_strip in ("çal", "cal", "oynat", "devam", "devam et"):
-            bk.medya_oynat_duraklat()
-            return f"Oynatıyorum {ad}!", "medya_kontrol", 0.95
-        if metin_strip in ("duraklat", "durdur", "bekle", "dur", "pause"):
-            bk.medya_oynat_duraklat()
-            return f"Duraklatıyorum {ad}.", "medya_kontrol", 0.95
-        if metin_strip in ("sonraki", "sonraki şarkı", "sonraki sarki", "sıradaki", "atla"):
-            bk.medya_sonraki()
-            return f"Sonraki parçaya geçiyorum {ad}.", "medya_kontrol", 0.95
-        if metin_strip in ("önceki", "önceki şarkı", "onceki sarki", "geri"):
-            bk.medya_onceki()
-            return f"Önceki parçaya dönüyorum {ad}.", "medya_kontrol", 0.95
 
         # ── 5. Web arama ──
         m = re.search(r"(?:internette?|google.?da|web.?de|araştır)\s+(.+?)(?:\s+ara)?$", metin)
