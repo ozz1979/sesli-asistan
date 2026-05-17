@@ -1,8 +1,7 @@
-' ATLAS Arka Plan Başlatıcı
-' Bilgisayar açıldığında ATLAS'ı sessizce başlatır
-' Komut penceresi göstermez
+' ATLAS Arka Plan Baslatici
+' Bilgisayar acildiginda sessizce baslar
 
 Set WshShell = CreateObject("WScript.Shell")
 strPath = CreateObject("Scripting.FileSystemObject").GetParentFolderName(WScript.ScriptFullName)
 WshShell.CurrentDirectory = strPath
-WshShell.Run "pythonw main.py --arka-plan", 0, False
+WshShell.Run strPath & "\venv\Scripts\pythonw.exe main.py --arka-plan", 0, False
