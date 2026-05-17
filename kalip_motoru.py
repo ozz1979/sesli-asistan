@@ -83,6 +83,17 @@ KAPAT_FIILLERI = {"kapat", "kapa", "sonlandır", "bitir", "durdur"}
 
 # Ses kontrol komutları → islem adı (bilgisayar_kontrol.ses_ayarla kullanılacak)
 SES_KOMUTLARI = {
+    # "sesini" varyantları — "bilgisayarın sesini aç/kapat" eşleşsin
+    # ÖNEMLİ: "aç" varyantları "kapat"tan ÖNCE olmalı
+    # çünkü "sesini kapattım sesini aç" cümlesinde ilk eşleşen kazanır
+    "sesini aç": "ac",
+    "sesini ac": "ac",
+    "sesini yükselt": "yukselt",
+    "sesini arttır": "yukselt",
+    "sesini kıs": "azalt",
+    "sesini azalt": "azalt",
+    "sesini kapat": "kapat",
+    # "sesi" varyantları
     "sesi aç": "ac",
     "sesi kapat": "kapat",
     "sesi kıs": "azalt",
@@ -90,6 +101,7 @@ SES_KOMUTLARI = {
     "sesi yükselt": "yukselt",
     "sesi arttır": "yukselt",
     "sesi azalt": "azalt",
+    # "ses " varyantları
     "ses aç": "ac",
     "ses kapat": "kapat",
     "ses kıs": "azalt",
@@ -838,7 +850,11 @@ class KalipMotoru:
             return f"Pencere kapatıldı {ad}.", "pencere_kapat", 0.95
 
         # ── 10. Bilgisayarı kapat / yeniden başlat / uyut / iptal ──
-        if "bilgisayar" in metin or "bilgisayari" in metin_norm or "bilgisayarı" in metin:
+        # KORUMA: "bilgisayarın sesini kapat" → ses komutu, bilgisayar değil!
+        # "sesini/sesi" varsa bu bir ses komutu, bilgisayar kapatma DEĞİL
+        _ses_kelimeler = ("sesini", "sesi ", "sesini ", "ses ")
+        _bilgisayar_ses_komutu = any(s in metin for s in _ses_kelimeler)
+        if not _bilgisayar_ses_komutu and ("bilgisayar" in metin or "bilgisayari" in metin_norm or "bilgisayarı" in metin):
             # Kapatma iptal
             if "iptal" in metin:
                 bk.kapatma_iptal()
