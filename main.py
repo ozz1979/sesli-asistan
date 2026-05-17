@@ -487,6 +487,16 @@ class AtlasBeyin:
         yanit = karar["yanit"]
         yol = karar["yol"]
 
+        # 3b. Güncelleme komutu — özel işlem
+        if karar.get("kategori") == "guncelleme_baslat":
+            self._gui_mesaj("asistan", yanit)
+            self.konusma.konus(yanit)
+            threading.Thread(target=self._sesli_guncelleme_yap, daemon=True).start()
+            self.dikkat.mod = DikkatModu.AKTIF
+            self._gui_durum("Dinleniyor...")
+            self._gui_mod("aktif")
+            return
+
         # 4. Duygu uyumu (Amigdala feedback)
         yanit = self.duygu.yanit_tonu_ayarla(yanit, duygu_sonucu)
 
@@ -559,6 +569,48 @@ class AtlasBeyin:
             logger.error(f"Bilgisayar tarama hatası: {e}")
             self._gui_mesaj("sistem", f"⚠️ Bilgisayar tarama hatası: {e}")
 
+    def _sesli_guncelleme_yap(self):
+        """Sesli komut veya GUI butonu ile güncelleme yap ve yeniden başlat"""
+        try:
+            self._gui_mesaj("sistem", "Güncelleme kontrol ediliyor...")
+
+            # oto_guncelleme modülünü yükle (varsa)
+            if not os.path.exists("oto_guncelleme.py"):
+                import urllib.request
+                t = str(int(time.time()))
+                url = f"https://raw.githubusercontent.com/ozz1979/sesli-asistan/main/oto_guncelleme.py?v={t}"
+                req = urllib.request.Request(url, headers={"Cache-Control": "no-cache"})
+                resp = urllib.request.urlopen(req, timeout=15)
+                with open("oto_guncelleme.py", "wb") as f:
+                    f.write(resp.read())
+
+            # Modülü taze yükle (önceki import varsa temizle)
+            if "oto_guncelleme" in sys.modules:
+                del sys.modules["oto_guncelleme"]
+            from oto_guncelleme import guncelleme_kontrol, _sha_kaydet
+
+            # SHA'yı sıfırla — zorla güncelleme yap
+            _sha_kaydet("")
+
+            guncellendi, mesaj = guncelleme_kontrol()
+
+            if guncellendi:
+                self._gui_mesaj("sistem", f"Güncelleme tamamlandı: {mesaj}")
+                self._gui_mesaj("sistem", "Yeniden başlatılıyor...")
+                self.konusma.konus("Güncelleme tamamlandı, yeniden başlatıyorum.")
+                time.sleep(2)
+                # ATLAS'ı yeniden başlat
+                python = sys.executable
+                os.execl(python, python, *sys.argv)
+            else:
+                self._gui_mesaj("sistem", "ATLAS zaten güncel, güncelleme gerekmiyor.")
+                self.konusma.konus("Zaten güncelim, yeni bir şey yok.")
+
+        except Exception as e:
+            logger.error(f"Sesli güncelleme hatası: {e}")
+            self._gui_mesaj("sistem", f"Güncelleme hatası: {e}")
+            self.konusma.konus("Güncelleme sırasında bir hata oluştu.")
+
     def _guncelleme_kontrol(self):
         """Arka planda güncelleme kontrolü"""
         try:
@@ -595,6 +647,8 @@ class AtlasBeyin:
             threading.Thread(target=self._gecmis_goster, daemon=True).start()
         elif hedef == "ayarlar":
             threading.Thread(target=self._ayarlar_goster, daemon=True).start()
+        elif hedef == "guncelle":
+            threading.Thread(target=self._sesli_guncelleme_yap, daemon=True).start()
 
     def _gecmis_goster(self):
         """Konuşma geçmişini sohbet panelinde göster"""
