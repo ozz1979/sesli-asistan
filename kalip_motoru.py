@@ -719,6 +719,16 @@ class KalipMotoru:
             bk.medya_onceki()
             return f"Önceki parçaya dönüyorum {ad}.", "medya_kontrol", 0.95
 
+        # Müziği / medyayı kapat / durdur — "müziği kapat", "şarkıyı durdur", "videoyu kes" vb.
+        if re.search(r"(?:müzi[kğ]|muzi[kğ]|şarkı|sarki|medya|video|youtube|yutup).{0,10}(?:kapat|kapa|durdur|bitir|sustur|kes)", metin):
+            bk.medya_oynat_duraklat()
+            bk._muzik_modu_kapat()
+            return f"Müzik duraklatıldı {ad}.", "medya_kontrol", 0.95
+        if re.search(r"(?:kapat|durdur|kes|bitir|sustur).{0,10}(?:müzi[kğ]|muzi[kğ]|şarkı|sarki|medya|video)", metin):
+            bk.medya_oynat_duraklat()
+            bk._muzik_modu_kapat()
+            return f"Müzik duraklatıldı {ad}.", "medya_kontrol", 0.95
+
         # ── Müzik arama (yeni müzik aç) ──
         # "müzik aç", "şarkı çal", "YouTube'da X çal/bulup aç" vb.
         # NOT: Türkçe ünsüz yumuşaması: müzik→müziği (k→ğ), şarkı→şarkıyı
