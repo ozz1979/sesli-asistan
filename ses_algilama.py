@@ -86,7 +86,7 @@ class SesAlgilama:
 
             rms = np.sqrt(np.mean(kalibrasyon.astype(np.float64) ** 2))
             if self._dinamik_esik:
-                self._enerji_esigi = max(rms * 1.4, 100)
+                self._enerji_esigi = max(rms * 1.15, 50)
             logger.info(f"Kalibrasyon tamamlandı. Ortam RMS: {rms:.0f}, Eşik: {self._enerji_esigi:.0f}")
 
             self._aktif = True
@@ -165,7 +165,7 @@ class SesAlgilama:
                     sessizlik_baslangic = None
 
                     if self._dinamik_esik:
-                        self._enerji_esigi = self._enerji_esigi * 0.95 + rms * 0.05 * 0.5
+                        self._enerji_esigi = self._enerji_esigi * 0.92 + rms * 0.08 * 0.4
 
                 elif konusma_basladi:
                     buffer.append(chunk.copy())
