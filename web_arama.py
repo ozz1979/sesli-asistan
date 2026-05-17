@@ -73,7 +73,7 @@ def _url_getir(url, timeout=8):
     """URL icerigini indir. Basit HTTP GET. Windows SSL uyumlu."""
     try:
         headers = {
-            "User-Agent": "ATLAS-Sesli-Asistan/1.0 (Windows; Python) — bilgi arama botu",
+            "User-Agent": "ATLAS-Sesli-Asistan/1.0 (Windows; Python)",
             "Accept": "text/html,application/xhtml+xml,application/json",
             "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.5",
         }
