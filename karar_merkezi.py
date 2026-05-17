@@ -49,6 +49,7 @@ class KararMerkezi:
         self.ogrenme = ogrenme          # Öğrenme motoru
         self.bilgi_bankasi = bilgi_bankasi  # Bilgi bankası
         self._bilgisayar_ozeti = ""  # Tarama özeti — system prompt'a eklenir
+        self._aktif_komut_modu = False  # Soru tipine gore prompt secimi
 
         ai_cfg = self.config.get("ai", {})
         self._gemini_model = ai_cfg.get("gemini_model", "gemini-2.0-flash")
@@ -158,8 +159,44 @@ class KararMerkezi:
         self._bilgisayar_ozeti = ozet_text
         logger.info(f"Bilgisayar bilgisi yüklendi ({len(ozet_text)} karakter)")
 
+    def _komut_gerekli_mi(self, text):
+        """Kullanicinin bilgisayar komutu isteyip istemedigini anla"""
+        komut_kelimeleri = [
+            "ac", "aç", "kapat", "kapa", "calistir", "çalıştır", "yaz",
+            "ara ", "goster", "göster", "indir", "kaydet", "sil",
+            "klasor", "klasör", "dosya", "program", "uygulama",
+            "chrome", "notepad", "excel", "word", "tarayici", "tarayıcı",
+            "wifi", "bluetooth", "parlaklik", "parlaklık", "ses ",
+            "ekran", "kilit", "kopyala", "tasi", "taşı", "adlandir",
+            "internette", "google", "not ", "alarm", "zamanlayici",
+            "cop", "çöp", "pil", "emoji", "masaustu", "masaüstü",
+        ]
+        text_lower = text.lower()
+        return any(k in text_lower for k in komut_kelimeleri)
+
     def _sistem_talimati(self):
-        """AI modelleri icin sistem talimati — dogal konusma + akilli komut sistemi"""
+        """AI modelleri icin sistem talimati — soru tipine gore kisa veya tam prompt"""
+        if getattr(self, '_aktif_komut_modu', False):
+            return self._tam_sistem_talimati()
+        return self._kisa_sistem_talimati()
+
+    def _kisa_sistem_talimati(self):
+        """Bilgi sorulari icin kisa prompt — daha az token kullanir"""
+        return """Sen ATLAS adinda bir Turkce sesli asistansin. Kullanicinin ismi Ozgur. Sen onun arkadasi ve yardimcisisin.
+
+KURALLAR:
+- SADECE TURKCE cevap ver.
+- Kisa ve oz cevap ver, en fazla 2-3 cumle.
+- Sorulara dogrudan cevap ver, laf dolandirma.
+- Bilmedigin konularda "Bunu kesin bilmiyorum ama arastirabilirim" de. ASLA uydurma.
+- Emoji kullanma cunku sesli okunacaksin.
+- BURC HESABI YAPMA! Burc sorusu gelirse sadece "Burcunu hesapliyorum" de.
+- DOVIZ KURU sorularinda ASLA tahmin yapma, sadece "kur bilgisini aliyorum" de.
+
+Web arama sonuclari varsa onlari kullanarak dogru ve guncel cevap ver. Kaynak gosterme, bilgiyi dogal aktar."""
+
+    def _tam_sistem_talimati(self):
+        """Bilgisayar komutlari icin tam prompt — tum KOMUT listesiyle"""
         bilgisayar_bolum = ""
         if self._bilgisayar_ozeti:
             bilgisayar_bolum = "\nKullanicinin bilgisayar bilgisi:\n" + self._bilgisayar_ozeti + "\n"
@@ -605,6 +642,9 @@ ATLAS: "Beni Ozgur yapti. Ben ATLAS'im, senin kisisel asistanin."
         # Web arama baglami varsa ekle
         if web_baglam:
             baglam = baglam + web_baglam
+
+        # Komut gerekli mi? — prompt seçimi için
+        self._aktif_komut_modu = self._komut_gerekli_mi(text)
 
         # Zincir: Gemini → DeepSeek → Groq → Ollama → Fallback
         ai_yanit = self._gemini_sor(baglam, text)
