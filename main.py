@@ -186,9 +186,17 @@ class AtlasBeyin:
         self._gui_mesaj("sistem", "ATLAS v{} başlatılıyor...".format(
             self.config.get("version", "8.0")))
 
-        # 1. Mikrofon başlat
+        # 1. Mikrofon başlat (5 deneme — boot sırasında donanım gecikebilir)
         self._gui_durum("Mikrofon hazırlanıyor...")
-        if not self.ses.baslat():
+        mic_ok = False
+        for mic_tur in range(5):
+            if self.ses.baslat(max_deneme=3):
+                mic_ok = True
+                break
+            logger.warning(f"Mikrofon turu {mic_tur + 1}/5 başarısız, 5sn bekleyip tekrar deneniyor...")
+            self._gui_mesaj("sistem", f"⚠️ Mikrofon bağlanamadı, tekrar deneniyor ({mic_tur + 1}/5)...")
+            time.sleep(5)
+        if not mic_ok:
             self._gui_hata(f"Mikrofon hatası: {self.ses.hata}")
             self._gui_mesaj("sistem", f"⚠️ Mikrofon hatası: {self.ses.hata}")
             return False
@@ -249,6 +257,12 @@ class AtlasBeyin:
             self._gui_mesaj("sistem", "🔇 Arka plan modu — 'Atlas' diye seslen!")
             self.dikkat.mod = DikkatModu.PASIF
             self._gui_mod("pasif")
+            # Hazır olduğunu sesli bildir (kullanıcı ATLAS'ın çalıştığını bilsin)
+            try:
+                self.konusma.on_bellek_hazir.wait(timeout=10)
+                self.konusma.on_bellekten_konus("Hazırım!")
+            except Exception:
+                pass
         elif not self.kimlik.kullanici_tanimli_mi():
             self._ilk_tanisma()
         else:
