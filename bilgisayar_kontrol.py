@@ -545,14 +545,13 @@ def muzik_cal(sorgu):
     """
     YouTube'da müzik ara ve ilk videoyu otomatik başlat.
     1. YouTube arama URL'si açılır
-    2. Sayfa yüklendikten sonra ilk videoya tıklanır
+    2. Sayfa yüklendikten sonra ilk video thumbnail'ine tıklanır
     """
     import urllib.parse
 
     try:
         import pyautogui
     except ImportError:
-        # pyautogui yoksa sadece arama sayfasını aç
         url = f"https://www.youtube.com/results?search_query={urllib.parse.quote(sorgu)}"
         os.startfile(url)
         return True, f"YouTube'da '{sorgu}' araması yapıldı"
@@ -562,17 +561,26 @@ def muzik_cal(sorgu):
         os.startfile(url)
         logger.info(f"YouTube müzik arama: {sorgu}")
 
-        # Sayfa yüklensin
-        time.sleep(5)
+        # Sayfa yüklensin (tarayıcı açılış + sayfa render)
+        time.sleep(6)
 
-        # İlk videoya tıkla — YouTube'da ilk sonuç
-        # ekranın yaklaşık %30 solunda, %42 üstünde (tüm çözünürlüklerde çalışır)
         ekran_w, ekran_h = pyautogui.size()
-        x = int(ekran_w * 0.30)
-        y = int(ekran_h * 0.42)
+        logger.info(f"Ekran çözünürlüğü: {ekran_w}x{ekran_h}")
+
+        # YouTube arama sonuçlarında ilk video thumbnail'i:
+        # Chrome UI (~75px) + YouTube header (~56px) + filtre (~44px) = ~175px üst boşluk
+        # İlk thumbnail ~200px yüksek → merkezi ~275px = ekranın %25'i (1080p'de)
+        # Thumbnail sol kenar: mini sidebar (~72px) + boşluk (~18px) = ~90px
+        # Thumbnail ~360px geniş → merkezi ~270px = ekranın %14'ü (1920'de)
+        # Güvenli: hem mini hem geniş sidebar için %20 x, %26 y
+        x = int(ekran_w * 0.20)
+        y = int(ekran_h * 0.26)
+        logger.info(f"İlk video tıklanıyor: ({x}, {y})")
         pyautogui.click(x, y)
 
-        logger.info(f"İlk video tıklandı: ({x}, {y})")
+        # Kısa bekleme — tıklama işe yaramadıysa Tab+Enter dene
+        time.sleep(1.5)
+
         return True, f"YouTube'da '{sorgu}' çalınıyor"
     except Exception as e:
         logger.error(f"Müzik çalma hatası: {e}")
