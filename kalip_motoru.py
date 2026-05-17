@@ -844,8 +844,15 @@ class KalipMotoru:
             else:
                 return f"Programları kapatırken sorun oluştu {ad}.", "hata", 0.9
 
-        # ── 9. Tek kelime "kapat" → aktif pencereyi kapat ──
-        if metin.strip() in ("kapat", "kapa", "pencereyi kapat", "bunu kapat"):
+        # ── 9. "kapat/kapa" → aktif pencereyi kapat (bilgisayarı DEĞİL!) ──
+        kapat_pencere = (
+            "kapat", "kapa", "pencereyi kapat", "bunu kapat",
+            "onu kapat", "onu kapa", "şunu kapat", "sunu kapat",
+            "bunu kapa", "sayfayı kapat", "sayfayi kapat",
+            "sekmeyi kapat", "sekmeyi kapa", "programı kapat", "programi kapat",
+            "pencereyi kapa",
+        )
+        if metin.strip() in kapat_pencere:
             bk.pencere_kapat()
             return f"Pencere kapatıldı {ad}.", "pencere_kapat", 0.95
 
@@ -874,8 +881,9 @@ class KalipMotoru:
                     return f"Bilgisayar uyku moduna geçiyor {ad}.", "uyku", 0.95
                 return f"Uyku modu hatası {ad}.", "hata", 0.9
 
-            # Kapat
-            if any(f in metin for f in KAPAT_FIILLERI):
+            # Kapat — SADECE açıkça "bilgisayarı kapat" dendiğinde
+            # "bilgisayarın sesini kapat" gibi cümleler yukarıda filtrelendi
+            if re.search(r"bilgisayar[ıi]?\s*(?:kapat|kapa)\b", metin):
                 basarili, sonuc = bk.bilgisayari_kapat(30)
                 if basarili:
                     return f"Bilgisayar 30 saniye sonra kapanacak {ad}. İptal etmek istersen 'iptal et' de.", "bilgisayar_kapat", 0.95
@@ -902,6 +910,95 @@ class KalipMotoru:
         if "yapıştır" in metin:
             bk.kisayol_bas("ctrl", "v")
             return f"Yapıştırıldı {ad}.", "kisayol", 0.95
+
+        # ── 12. Wi-Fi kontrol ──
+        if re.search(r"(?:wifi|wi-fi|wai\s*fai|internet).{0,10}(?:aç|ac|bağla|bagla)", metin):
+            basarili, mesaj = bk.wifi_kontrol("ac")
+            return f"Wi-Fi açılıyor {ad}.", "wifi", 0.95
+        if re.search(r"(?:wifi|wi-fi|wai\s*fai|internet).{0,10}(?:kapat|kapa|kes)", metin):
+            basarili, mesaj = bk.wifi_kontrol("kapat")
+            return f"Wi-Fi kapatılıyor {ad}.", "wifi", 0.95
+
+        # ── 13. Bluetooth kontrol ──
+        if re.search(r"bluetooth.{0,10}(?:aç|ac|kapat|kapa|ayar)", metin):
+            basarili, mesaj = bk.bluetooth_kontrol("ac")
+            return f"Bluetooth ayarları açılıyor {ad}.", "bluetooth", 0.95
+
+        # ── 14. Parlaklık ayarlama ──
+        m_parlaklik = re.search(r"(?:parlaklı[kğ]|parlaklik|ekran).{0,10}(?:%?\s*(\d+)|yüzde\s*(\d+))", metin)
+        if m_parlaklik:
+            yuzde = m_parlaklik.group(1) or m_parlaklik.group(2)
+            basarili, mesaj = bk.parlaklik_ayarla(int(yuzde))
+            return f"Parlaklık %{yuzde} yapıldı {ad}.", "parlaklik", 0.95
+        if re.search(r"(?:parlaklı[kğ]|parlaklik).{0,8}(?:arttır|artır|artir|yükselt|yukselt|aç|ac)", metin):
+            basarili, mesaj = bk.parlaklik_ayarla(80)
+            return f"Parlaklık artırıldı {ad}.", "parlaklik", 0.95
+        if re.search(r"(?:parlaklı[kğ]|parlaklik).{0,8}(?:azalt|kıs|kis|düşür|dusur)", metin):
+            basarili, mesaj = bk.parlaklik_ayarla(30)
+            return f"Parlaklık azaltıldı {ad}.", "parlaklik", 0.95
+
+        # ── 15. Ekran kilitle ──
+        if re.search(r"(?:ekranı?|bilgisayarı?).{0,8}(?:kilitle|kilitlesene)", metin):
+            basarili, mesaj = bk.ekran_kilitle()
+            return f"Ekran kilitlendi {ad}.", "kilit", 0.95
+
+        # ── 16. Çöp kutusu ──
+        if re.search(r"(?:çöp|cop).{0,10}(?:boşalt|bosalt|temizle|sil)", metin):
+            basarili, mesaj = bk.cop_bosalt()
+            return f"Çöp kutusu boşaltıldı {ad}.", "cop", 0.95
+
+        # ── 17. Pil durumu ──
+        if re.search(r"(?:pil|batarya|şarj|sarj).{0,10}(?:ne kadar|kaç|kac|yüzde|yuzde|durumu?|var mı)", metin):
+            basarili, veri = bk.pil_durumu()
+            if basarili:
+                return f"Pil yüzde {veri['yuzde']}, {veri['durum']} {ad}.", "pil", 0.95
+            return f"Pil bilgisini alamadım {ad}.", "hata", 0.85
+
+        # ── 18. Not alma ──
+        m_not = re.search(r"(?:not\s+al|not\s+yaz|not\s+oluştur|nota?\s+kaydet)(?:\s*[:\-]?\s*(.+))?", metin)
+        if m_not:
+            icerik = m_not.group(1) or "Boş not"
+            basarili, mesaj = bk.not_al("Atlas Notu", icerik.strip())
+            if basarili:
+                return f"Not oluşturuldu {ad}!", "not", 0.95
+            return f"Not oluşturulamadı {ad}.", "hata", 0.85
+
+        # ── 19. Hatırlatıcı / Alarm ──
+        m_alarm = re.search(r"(\d+)\s*(?:dakika|dk|saniye|sn|saat).{0,15}(?:hatırlat|hatirlat|alarm|zamanlayıcı|timer|söyle|soyle)", metin)
+        if not m_alarm:
+            m_alarm = re.search(r"(?:hatırlat|hatirlat|alarm|zamanlayıcı|timer).{0,15}(\d+)\s*(?:dakika|dk|saniye|sn|saat)", metin)
+        if m_alarm:
+            miktar = int(m_alarm.group(1))
+            if "saat" in metin:
+                saniye = miktar * 3600
+            elif "dakika" in metin or "dk" in metin:
+                saniye = miktar * 60
+            else:
+                saniye = miktar
+            basarili, mesaj = bk.alarm_kur(saniye)
+            if basarili:
+                return f"{mesaj} {ad}.", "alarm", 0.95
+            return f"Alarm kurulamadı {ad}.", "hata", 0.85
+
+        # ── 20. Masaüstünü göster ──
+        if re.search(r"(?:masaüstü|masaustu|masaustunu).{0,8}(?:göster|goster)", metin):
+            basarili, mesaj = bk.masaustu_goster()
+            return f"Masaüstü gösteriliyor {ad}.", "masaustu", 0.95
+
+        # ── 21. Pencere değiştir ──
+        if re.search(r"(?:pencere|sayfa|program).{0,8}(?:değiştir|degistir|geç|gec)", metin):
+            basarili, mesaj = bk.pencere_degistir()
+            return f"Pencere değiştirildi {ad}.", "pencere_degistir", 0.95
+
+        # ── 22. Ekran yakalama (Win+Shift+S) ──
+        if re.search(r"(?:ekran|alan).{0,8}(?:yakala|seç|sec|kes|kırp|kirp)", metin):
+            basarili, mesaj = bk.yakalama_araci()
+            return f"Yakalama aracı açıldı {ad}.", "yakalama", 0.95
+
+        # ── 23. Emoji paneli ──
+        if re.search(r"emoji.{0,8}(?:aç|ac|göster|goster|paneli?)", metin):
+            basarili, mesaj = bk.emoji_paneli()
+            return f"Emoji paneli açıldı {ad}!", "emoji", 0.95
 
         return None, None, 0.0
 
