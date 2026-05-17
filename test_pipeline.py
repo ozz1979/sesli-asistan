@@ -70,8 +70,8 @@ try:
     from hafiza_sistemi import HafizaSistemi
     from duygu_analizi import DuyguAnalizi
 
-    kalip = KalipMotoru(config)
     hafiza = HafizaSistemi(config)
+    kalip = KalipMotoru(hafiza)
     duygu = DuyguAnalizi()
     km = KararMerkezi(kalip, hafiza, duygu, config)
     print("  Karar merkezi: OK")
