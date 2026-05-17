@@ -199,14 +199,38 @@ Komutlar:
 - [KOMUT:pencere:ISLEM] → Pencere: kucult, buyut, kapat
 - [KOMUT:ses:ISLEM] → Ses: yukselt, azalt, kapat, ac
 - [KOMUT:kapat_program:ISIM] → Program kapat (chrome, notepad, excel)
+- [KOMUT:dosya_oku:YOL] → Dosya icerigini oku (txt, py, json, csv vb.)
+- [KOMUT:dosya_yaz:YOL|ICERIK] → Dosyaya yaz (uzerine yazar, yedek alir)
+- [KOMUT:dosya_ekle:YOL|ICERIK] → Dosya sonuna ekle
+- [KOMUT:dosya_sil:YOL] → Dosyayi cop kutusuna gonder
+- [KOMUT:dosya_listele:YOL] → Klasordeki dosyalari listele
+- [KOMUT:dosya_tasi:KAYNAK|HEDEF] → Dosya tasi
+- [KOMUT:dosya_kopyala:KAYNAK|HEDEF] → Dosya kopyala
+- [KOMUT:dosya_adlandir:YOL|YENI_ISIM] → Dosya yeniden adlandir
+- [KOMUT:klasor_olustur:YOL] → Yeni klasor olustur
+- [KOMUT:wifi:ac] veya [KOMUT:wifi:kapat] → Wi-Fi ac/kapat
+- [KOMUT:bluetooth:ac] → Bluetooth ayarlarini ac
+- [KOMUT:parlaklik:YUZDE] → Ekran parlakligini ayarla (0-100)
+- [KOMUT:kilit] → Ekrani kilitle
+- [KOMUT:cop_bosalt] → Cop kutusunu bosalt
+- [KOMUT:pil] → Pil durumunu sorgula
+- [KOMUT:not:BASLIK|ICERIK] → Masaustune not dosyasi olustur
+- [KOMUT:alarm:SANIYE:MESAJ] → Zamanlayici/hatirlatici kur
+- [KOMUT:masaustu_goster] → Tum pencereleri kucultup masaustunu goster
+- [KOMUT:pencere_degistir] → Sonraki pencereye gec (Alt+Tab)
+- [KOMUT:yakalama] → Ekran yakalama araci ac
+- [KOMUT:emoji] → Emoji panelini ac
 
 KURALLAR:
 - Komut etiketini yanitin SONUNA yaz. Kullanici etiketi duymaz.
 - Sohbet mesajlarinda etiket KULLANMA.
 - TEHLIKELI komutlar YASAK: format, del, rmdir, shutdown, reg delete.
 - Kullanici "resmi kapat", "fotografı kapat" derse [KOMUT:pencere:kapat] kullan, ASLA bilgisayari kapatma.
+- Kullanici sadece "kapat" derse aktif pencereyi kapat: [KOMUT:pencere:kapat]. ASLA bilgisayari kapatma!
 - Bilgisayari kapatma komutu SADECE kullanici acikca "bilgisayarı kapat" dediginde kullanilabilir.
 - Birden fazla komut olabilir: "Aciyorum! [KOMUT:calistir:notepad] [KOMUT:yaz:merhaba]"
+- Dosya yollarinda | ayirici kullan: [KOMUT:dosya_yaz:C:\\dosya.txt|icerik buraya]
+- Dosya islemlerinde kullanicinin masaustu yolu: ~\\Desktop
 
 ORNEK DIYALOGLAR:
 
@@ -352,6 +376,114 @@ ATLAS: "Beni Ozgur yapti. Ben ATLAS'im, senin kisisel asistanin."
                     if islem:
                         basarili, mesaj = bk.ses_ayarla(islem)
                         sonuclar.append(("ok" if basarili else "hata", mesaj))
+
+                elif tip == "dosya_oku":
+                    basarili, sonuc = bk.dosya_oku(param)
+                    sonuclar.append(("ok" if basarili else "hata", sonuc))
+
+                elif tip == "dosya_yaz":
+                    parcalar2 = param.split("|", 1)
+                    if len(parcalar2) == 2:
+                        basarili, sonuc = bk.dosya_yaz(parcalar2[0].strip(), parcalar2[1])
+                        sonuclar.append(("ok" if basarili else "hata", sonuc))
+                    else:
+                        sonuclar.append(("hata", "Format: YOL|ICERIK"))
+
+                elif tip == "dosya_ekle":
+                    parcalar2 = param.split("|", 1)
+                    if len(parcalar2) == 2:
+                        basarili, sonuc = bk.dosya_ekle(parcalar2[0].strip(), parcalar2[1])
+                        sonuclar.append(("ok" if basarili else "hata", sonuc))
+
+                elif tip == "dosya_sil":
+                    basarili, sonuc = bk.dosya_sil(param)
+                    sonuclar.append(("ok" if basarili else "hata", sonuc))
+
+                elif tip == "dosya_listele":
+                    basarili, sonuc = bk.dosya_listele(param or None)
+                    sonuclar.append(("ok" if basarili else "hata", sonuc))
+
+                elif tip == "dosya_tasi":
+                    parcalar2 = param.split("|", 1)
+                    if len(parcalar2) == 2:
+                        basarili, sonuc = bk.dosya_tasi(parcalar2[0].strip(), parcalar2[1].strip())
+                        sonuclar.append(("ok" if basarili else "hata", sonuc))
+
+                elif tip == "dosya_kopyala":
+                    parcalar2 = param.split("|", 1)
+                    if len(parcalar2) == 2:
+                        basarili, sonuc = bk.dosya_kopyala(parcalar2[0].strip(), parcalar2[1].strip())
+                        sonuclar.append(("ok" if basarili else "hata", sonuc))
+
+                elif tip == "dosya_adlandir":
+                    parcalar2 = param.split("|", 1)
+                    if len(parcalar2) == 2:
+                        basarili, sonuc = bk.dosya_yeniden_adlandir(parcalar2[0].strip(), parcalar2[1].strip())
+                        sonuclar.append(("ok" if basarili else "hata", sonuc))
+
+                elif tip == "klasor_olustur":
+                    basarili, sonuc = bk.klasor_olustur(param)
+                    sonuclar.append(("ok" if basarili else "hata", sonuc))
+
+                elif tip == "wifi":
+                    basarili, sonuc = bk.wifi_kontrol(param.lower().replace("aç", "ac"))
+                    sonuclar.append(("ok" if basarili else "hata", sonuc))
+
+                elif tip == "bluetooth":
+                    basarili, sonuc = bk.bluetooth_kontrol(param.lower())
+                    sonuclar.append(("ok" if basarili else "hata", sonuc))
+
+                elif tip == "parlaklik":
+                    basarili, sonuc = bk.parlaklik_ayarla(param)
+                    sonuclar.append(("ok" if basarili else "hata", sonuc))
+
+                elif tip == "kilit":
+                    basarili, sonuc = bk.ekran_kilitle()
+                    sonuclar.append(("ok" if basarili else "hata", sonuc))
+
+                elif tip == "cop_bosalt":
+                    basarili, sonuc = bk.cop_bosalt()
+                    sonuclar.append(("ok" if basarili else "hata", sonuc))
+
+                elif tip == "pil":
+                    basarili, sonuc = bk.pil_durumu()
+                    if basarili:
+                        sonuclar.append(("ok", f"Pil %{sonuc['yuzde']}, {sonuc['durum']}"))
+                    else:
+                        sonuclar.append(("hata", sonuc))
+
+                elif tip == "not":
+                    parcalar2 = param.split("|", 1)
+                    baslik = parcalar2[0].strip()
+                    icerik = parcalar2[1].strip() if len(parcalar2) > 1 else ""
+                    basarili, sonuc = bk.not_al(baslik, icerik)
+                    sonuclar.append(("ok" if basarili else "hata", sonuc))
+
+                elif tip == "alarm":
+                    parcalar2 = param.split(":", 1)
+                    try:
+                        saniye = int(parcalar2[0].strip())
+                        mesaj = parcalar2[1].strip() if len(parcalar2) > 1 else "Sure doldu!"
+                        basarili, sonuc = bk.alarm_kur(saniye, mesaj)
+                        sonuclar.append(("ok" if basarili else "hata", sonuc))
+                    except ValueError:
+                        sonuclar.append(("hata", "Gecersiz sure"))
+
+                elif tip == "masaustu_goster":
+                    basarili, sonuc = bk.masaustu_goster()
+                    sonuclar.append(("ok" if basarili else "hata", sonuc))
+
+                elif tip == "pencere_degistir":
+                    basarili, sonuc = bk.pencere_degistir()
+                    sonuclar.append(("ok" if basarili else "hata", sonuc))
+
+                elif tip == "yakalama":
+                    basarili, sonuc = bk.yakalama_araci()
+                    sonuclar.append(("ok" if basarili else "hata", sonuc))
+
+                elif tip == "emoji":
+                    basarili, sonuc = bk.emoji_paneli()
+                    sonuclar.append(("ok" if basarili else "hata", sonuc))
 
                 elif tip == "kapat_program":
                     # Program kapatma — taskkill kullan
