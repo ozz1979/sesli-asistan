@@ -589,8 +589,10 @@ class AtlasBeyin:
                 del sys.modules["oto_guncelleme"]
             from oto_guncelleme import guncelleme_kontrol, _sha_kaydet
 
-            # SHA'yı sıfırla — zorla güncelleme yap
-            _sha_kaydet("")
+            # SHA'yı sahte değerle sıfırla — zorla güncelleme yap
+            # NOT: Boş string ("") kullanma! guncelleme_kontrol() bos SHA'yi
+            # "Ilk calistirma" olarak gorur ve dosya indirmeden sadece SHA kaydeder.
+            _sha_kaydet("force-update")
 
             guncellendi, mesaj = guncelleme_kontrol()
 
