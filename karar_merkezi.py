@@ -910,8 +910,8 @@ ATLAS: "Beni Ozgur yapti. Ben ATLAS'im, senin kisisel asistanin."
     # GROQ AI (ÜCRETSİZ)
     # ══════════════════════════════════════════════════
 
-    def _groq_sor(self, baglam, soru):
-        """Groq AI'a sor — OpenAI uyumlu API, ücretsiz"""
+    def _groq_sor(self, baglam, soru, _deneme=1):
+        """Groq AI'a sor — OpenAI uyumlu API, ücretsiz. Rate limit'te 5sn bekleyip tekrar dener."""
         if not self._groq_client or self._groq_devre_disi:
             return None
 
@@ -939,7 +939,13 @@ ATLAS: "Beni Ozgur yapti. Ben ATLAS'im, senin kisisel asistanin."
         except Exception as e:
             hata_str = str(e).lower()
             if "429" in hata_str or "rate" in hata_str:
-                logger.warning("Groq rate limit — sonraki AI'a geçiliyor...")
+                if _deneme <= 2:
+                    bekleme = 5 * _deneme
+                    logger.warning(f"Groq rate limit — {bekleme}sn bekleyip tekrar deneniyor (deneme {_deneme})...")
+                    time.sleep(bekleme)
+                    return self._groq_sor(baglam, soru, _deneme=_deneme + 1)
+                else:
+                    logger.warning("Groq rate limit — 2 deneme de başarısız")
             else:
                 logger.error(f"Groq hatası: {type(e).__name__}: {e}")
 
@@ -950,10 +956,10 @@ ATLAS: "Beni Ozgur yapti. Ben ATLAS'im, senin kisisel asistanin."
     # ══════════════════════════════════════════════════
 
     def _ollama_sor(self, baglam, soru):
-        """Ollama yerel AI'a sor"""
+        """Ollama yerel AI'a sor — yüklü değilse hızlıca atla"""
         try:
             try:
-                r = requests.get(f"{self._ollama_url}/api/tags", timeout=1.5)
+                r = requests.get(f"{self._ollama_url}/api/tags", timeout=1)
                 if r.status_code != 200:
                     return None
             except Exception:
@@ -972,7 +978,7 @@ ATLAS: "Beni Ozgur yapti. Ben ATLAS'im, senin kisisel asistanin."
                         "temperature": self._sicaklik,
                     }
                 },
-                timeout=15
+                timeout=3
             )
 
             if response.status_code == 200:
@@ -982,7 +988,7 @@ ATLAS: "Beni Ozgur yapti. Ben ATLAS'im, senin kisisel asistanin."
                     return self._yanit_temizle(yanit)
 
         except Exception as e:
-            logger.error(f"Ollama hatası: {e}")
+            logger.debug(f"Ollama mevcut değil veya hata: {e}")
 
         return None
 
