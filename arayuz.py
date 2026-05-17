@@ -260,6 +260,7 @@ class GuiSinyalleri(QObject):
     ses_seviyesi = pyqtSignal(float)
     navigasyon = pyqtSignal(str)     # sidebar menü tıklama: "gecmis", "ayarlar"
     pencere_goster = pyqtSignal()    # arka plan modunda pencereyi göster
+    guncelleme_baslat = pyqtSignal() # güncelleme tetikle (sesli komut veya buton)
 
 
 # ═══════════════════════════════════════════════════════
@@ -527,6 +528,7 @@ class AtlasArayuz(QMainWindow):
         lay.addWidget(self._sidebar_item("Ana Sayfa", aktif=True))
         lay.addWidget(self._sidebar_item("Geçmiş", aksiyon="gecmis"))
         lay.addWidget(self._sidebar_item("Ayarlar", aksiyon="ayarlar"))
+        lay.addWidget(self._sidebar_item("Güncelle", aksiyon="guncelle"))
 
         lay.addSpacing(20)
 
