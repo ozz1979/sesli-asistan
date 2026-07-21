@@ -646,17 +646,17 @@ ATLAS: "Beni Ozgur yapti. Ben ATLAS'im, senin kisisel asistanin."
         # Komut gerekli mi? — prompt seçimi için
         self._aktif_komut_modu = self._komut_gerekli_mi(text)
 
-        # Zincir: Gemini → DeepSeek → Groq → Ollama → Fallback
-        ai_yanit = self._gemini_sor(baglam, text)
+        # Zincir: DeepSeek → Ollama → Groq → Gemini → Fallback
+        ai_yanit = self._deepseek_sor(baglam, text)
 
         if not ai_yanit:
-            ai_yanit = self._deepseek_sor(baglam, text)
+            ai_yanit = self._ollama_sor(baglam, text)
 
         if not ai_yanit:
             ai_yanit = self._groq_sor(baglam, text)
 
         if not ai_yanit:
-            ai_yanit = self._ollama_sor(baglam, text)
+            ai_yanit = self._gemini_sor(baglam, text)
 
         if not ai_yanit:
             ai_yanit = self._fallback_yanit(text, niyet)
@@ -1018,15 +1018,18 @@ ATLAS: "Beni Ozgur yapti. Ben ATLAS'im, senin kisisel asistanin."
                         "temperature": self._sicaklik,
                     }
                 },
-                timeout=3
+                timeout=30
             )
 
             if response.status_code == 200:
                 data = response.json()
                 yanit = data.get("response", "").strip()
                 if yanit:
+                    logger.info(f"Ollama yanıt verdi ({len(yanit)} karakter)")
                     return self._yanit_temizle(yanit)
 
+        except requests.exceptions.Timeout:
+            logger.warning("Ollama zaman aşımı (30sn)")
         except Exception as e:
             logger.debug(f"Ollama mevcut değil veya hata: {e}")
 

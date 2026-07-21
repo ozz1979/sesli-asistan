@@ -1,62 +1,62 @@
 {
-    "version": "8.2i",
-    "asistan_adi": "ATLAS",
-    "tetik_kelime": "atlas",
-    "kullanici": {
-        "ad": "",
-        "ses_profili": {},
-        "tercihler": {}
-    },
-    "stt": {
-        "motor": "google",
-        "dil": "tr-TR",
-        "enerji_esigi": 300,
-        "dinamik_esik": true,
-        "kalibrasyon_suresi": 1.0,
-        "dinleme_suresi": 8,
-        "sessizlik_suresi": 1.5
-    },
-    "tts": {
-        "motor": "edge-tts",
-        "ses": "tr-TR-AhmetNeural",
-        "hiz": "+5%",
-        "on_bellek": true,
-        "on_bellek_esik": 25
-    },
-    "ai": {
-        "birincil": "gemini",
-        "yedek": "ollama",
-        "gemini_model": "gemini-2.0-flash",
-        "gemini_api_key": "",
-        "gemini_yedek_model": "gemini-2.0-flash-lite",
-        "deepseek_api_key": "",
-        "deepseek_model": "deepseek-chat",
-        "groq_api_key": "",
-        "groq_model": "llama-3.3-70b-versatile",
-        "ollama_model": "llama3",
-        "ollama_url": "http://localhost:11434",
-        "max_token": 100,
-        "sicaklik": 0.7,
-        "timeout": 8
-    },
-    "hafiza": {
-        "calisma_bellegi_boyutu": 7,
-        "oturum_kayit": true,
-        "epizodik_kayit": true,
-        "semantik_kayit": true,
-        "prosedurel_kayit": true,
-        "konsolidasyon_esigi": 3
-    },
-    "dikkat": {
-        "aktif_mod_suresi": 45,
-        "pasif_dinleme": true,
-        "tetik_hassasiyeti": 0.6
-    },
-    "sistem": {
-        "otomatik_baslat": false,
-        "guncelleme_kontrol": true,
-        "github_repo": "ozz1979/sesli-asistan",
-        "log_seviyesi": "INFO",
-        "log_dosyasi": "atlas.log"
-    }
+  "version": "8.2i",
+  "asistan_adi": "ATLAS",
+  "tetik_kelime": "atlas",
+  "kullanici": {
+    "ad": "",
+    "ses_profili": {},
+    "tercihler": {}
+  },
+  "stt": {
+    "motor": "google",
+    "dil": "tr-TR",
+    "enerji_esigi": 300,
+    "dinamik_esik": true,
+    "kalibrasyon_suresi": 1.0,
+    "dinleme_suresi": 8,
+    "sessizlik_suresi": 1.5
+  },
+  "tts": {
+    "motor": "edge-tts",
+    "ses": "tr-TR-AhmetNeural",
+    "hiz": "+5%",
+    "on_bellek": true,
+    "on_bellek_esik": 25
+  },
+  "ai": {
+    "birincil": "deepseek",
+    "yedek": "ollama",
+    "gemini_model": "gemini-2.0-flash",
+    "gemini_api_key": "",
+    "gemini_yedek_model": "gemini-2.0-flash-lite",
+    "deepseek_api_key": "",
+    "deepseek_model": "deepseek-chat",
+    "groq_api_key": "",
+    "groq_model": "llama-3.3-70b-versatile",
+    "ollama_model": "llama3",
+    "ollama_url": "http://localhost:11434",
+    "max_token": 100,
+    "sicaklik": 0.7,
+    "timeout": 8
+  },
+  "hafiza": {
+    "calisma_bellegi_boyutu": 7,
+    "oturum_kayit": true,
+    "epizodik_kayit": true,
+    "semantik_kayit": true,
+    "prosedurel_kayit": true,
+    "konsolidasyon_esigi": 3
+  },
+  "dikkat": {
+    "aktif_mod_suresi": 45,
+    "pasif_dinleme": true,
+    "tetik_hassasiyeti": 0.6
+  },
+  "sistem": {
+    "otomatik_baslat": false,
+    "guncelleme_kontrol": true,
+    "github_repo": "ozz1979/sesli-asistan",
+    "log_seviyesi": "INFO",
+    "log_dosyasi": "atlas.log"
+  }
 }
