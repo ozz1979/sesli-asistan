@@ -841,18 +841,27 @@ class KalipMotoru:
                 profil_eslesti = False
                 # Profil haritası — kullanıcının Chrome profilleri
                 CHROME_PROFIL_HARITASI = {
+                    # Profile 1 — EKSPERTEKS TEKSTİL
                     "profil 1": "Profile 1",
                     "profile 1": "Profile 1",
                     "kişi 1": "Profile 1",
                     "kisi 1": "Profile 1",
                     "ikinci hesap": "Profile 1",
                     "ikinci profil": "Profile 1",
+                    "eksperteks": "Profile 1",
+                    "tekstil": "Profile 1",
+                    "iş hesabı": "Profile 1",
+                    "is hesabi": "Profile 1",
+                    # Default — Mahmut Özgür IŞIK
                     "varsayılan": "Default",
                     "varsayilan": "Default",
                     "ana hesap": "Default",
                     "birinci hesap": "Default",
                     "birinci profil": "Default",
                     "default": "Default",
+                    "mahmut": "Default",
+                    "kişisel": "Default",
+                    "kisisel": "Default",
                 }
                 for anahtar, profil_dir in CHROME_PROFIL_HARITASI.items():
                     if anahtar in metin or turkce_normalize(anahtar) in metin_norm:
@@ -860,7 +869,7 @@ class KalipMotoru:
                         try:
                             komut = f'start chrome --profile-directory="{profil_dir}"'
                             subprocess.Popen(komut, shell=True)
-                            profil_isim = "Kişi 1" if profil_dir == "Profile 1" else "Ana hesap"
+                            profil_isim = "Eksperteks" if profil_dir == "Profile 1" else "Mahmut Özgür"
                             logger.info(f"Chrome profil açıldı: {profil_dir} → {komut}")
                             return f"Chrome {profil_isim} profiliyle açılıyor {ad}!", "program_ac", 0.95
                         except Exception as e:
