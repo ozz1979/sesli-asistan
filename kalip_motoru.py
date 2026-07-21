@@ -832,7 +832,42 @@ class KalipMotoru:
             bk.tum_pencereleri_kucult()
             return f"Masaüstü gösteriliyor {ad}.", "pencere", 0.95
 
-        # ── 7. Program açma/kapatma ──
+        # ── 7a. Chrome profil seçimli açma ──
+        # "chrome profil 1 aç", "chrome kişi 1 aç", "tarayıcı profil 1 aç" vb.
+        chrome_isimleri = ["chrome", "krom", "tarayıcı", "tarayici", "google chrome", "google"]
+        if any(f in metin for f in AC_FIILLERI):
+            chrome_var = any(c in metin or turkce_normalize(c) in metin_norm for c in chrome_isimleri)
+            if chrome_var:
+                profil_eslesti = False
+                # Profil haritası — kullanıcının Chrome profilleri
+                CHROME_PROFIL_HARITASI = {
+                    "profil 1": "Profile 1",
+                    "profile 1": "Profile 1",
+                    "kişi 1": "Profile 1",
+                    "kisi 1": "Profile 1",
+                    "ikinci hesap": "Profile 1",
+                    "ikinci profil": "Profile 1",
+                    "varsayılan": "Default",
+                    "varsayilan": "Default",
+                    "ana hesap": "Default",
+                    "birinci hesap": "Default",
+                    "birinci profil": "Default",
+                    "default": "Default",
+                }
+                for anahtar, profil_dir in CHROME_PROFIL_HARITASI.items():
+                    if anahtar in metin or turkce_normalize(anahtar) in metin_norm:
+                        profil_eslesti = True
+                        try:
+                            komut = f'start chrome --profile-directory="{profil_dir}"'
+                            subprocess.Popen(komut, shell=True)
+                            profil_isim = "Kişi 1" if profil_dir == "Profile 1" else "Ana hesap"
+                            logger.info(f"Chrome profil açıldı: {profil_dir} → {komut}")
+                            return f"Chrome {profil_isim} profiliyle açılıyor {ad}!", "program_ac", 0.95
+                        except Exception as e:
+                            logger.error(f"Chrome profil açma hatası: {e}")
+                            return f"Chrome profil açılırken hata oluştu.", "program_hata", 0.9
+
+        # ── 7b. Program açma/kapatma ──
         eylem_ac = any(f in metin for f in AC_FIILLERI)
         eylem_kapat = any(f in metin for f in KAPAT_FIILLERI)
 
